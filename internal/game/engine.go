@@ -163,9 +163,10 @@ func (e *Engine) runLoop(ctx context.Context, r *room.Room, rr *roomRunner) {
 				r.GlobalTimer = 0
 			}
 
+			graceDur := time.Duration(LatencyGraceTicks) * tickRate
 			now := time.Now()
 			for _, p := range r.AlivePlayers() {
-				if now.Sub(p.LastPulseAt) > r.Tier.PulseWindow {
+				if now.Sub(p.LastPulseAt) > r.Tier.PulseWindow+graceDur {
 					r.Eliminate(p.ID)
 					e.broadcastElimination(r, p.ID)
 				}
@@ -201,9 +202,9 @@ func (e *Engine) finishRoom(r *room.Room) {
 	now := time.Now()
 	r.EndedAt = &now
 
-	alive := r.AlivePlayers()
-	if len(alive) == 1 {
-		r.WinnerID = alive[0].ID
+	placements := r.Placements()
+	if len(placements) > 0 {
+		r.WinnerID = placements[0]
 	}
 
 	e.broadcastState(r)
