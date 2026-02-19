@@ -1,0 +1,322 @@
+# Manual Deployment — Hetzner Server
+
+Build locally on Windows, upload artifacts, run natively on the server. No Docker.
+
+---
+
+## 1. Local Build
+
+### Backend (Go → Linux binary)
+
+```powershell
+$env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
+```
+
+### Frontend (Next.js standalone)
+
+```powershell
+cd web
+$env:NEXT_PUBLIC_WS_URL="wss://lastclick.vsevex.me"
+npm run build
+cd ..
+```
+
+This produces `web/.next/standalone/` and `web/.next/static/`.
+
+### Install goose locally (one-time)
+
+```powershell
+go install github.com/pressly/goose/v3/cmd/goose@latest
+$env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/goose github.com/pressly/goose/v3/cmd/goose
+```
+
+---
+
+## 2. Upload to Server
+
+```powershell
+scp bin/lastclick root@<server-ip>:/opt/lastclick/
+scp bin/goose root@<server-ip>:/opt/lastclick/
+scp -r migrations root@<server-ip>:/opt/lastclick/
+scp -r web/.next/standalone/* root@<server-ip>:/opt/lastclick/web/
+scp -r web/.next/static root@<server-ip>:/opt/lastclick/web/.next/static
+scp nginx/default.conf root@<server-ip>:/etc/nginx/conf.d/lastclick.conf
+```
+
+Directory layout on server:
+
+```bash
+/opt/lastclick/
+├── lastclick              # Go binary
+├── goose                  # migration tool
+├── migrations/            # SQL files
+└── web/
+    ├── server.js          # Next.js standalone entry
+    ├── .next/static/      # static assets
+    └── ...                # rest of standalone output
+```
+
+---
+
+## 3. Server Prerequisites
+
+```bash
+apt update && apt upgrade -y
+apt install -y nginx postgresql redis-server
+systemctl enable --now postgresql redis-server nginx
+```
+
+### PostgreSQL
+
+```bash
+sudo -u postgres psql <<SQL
+CREATE USER vsevex WITH PASSWORD '1596225600';
+CREATE DATABASE lastclick OWNER vsevex;
+SQL
+```
+
+### Run Migrations
+
+```bash
+cd /opt/lastclick
+chmod +x lastclick goose
+./goose -dir migrations postgres "postgres://vsevex:1596225600@localhost:5432/lastclick?sslmode=disable" up
+```
+
+---
+
+## 4. Environment File
+
+```bash
+cat > /opt/lastclick/.env << 'EOF'
+ENV=production
+HTTP_ADDR=:8080
+BOT_TOKEN=<your-bot-token>
+MINI_APP_URL=https://lastclick.vsevex.me
+DATABASE_URL=postgres://vsevex:1596225600@localhost:5432/lastclick?sslmode=disable
+REDIS_ADDR=localhost:6379
+REDIS_PASSWORD=
+REDIS_DB=0
+EOF
+
+chmod 600 /opt/lastclick/.env
+```
+
+---
+
+## 5. Systemd Services
+
+### Backend
+
+```bash
+cat > /etc/systemd/system/lastclick.service << 'EOF'
+[Unit]
+Description=LastClick Backend
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/lastclick
+EnvironmentFile=/opt/lastclick/.env
+ExecStart=/opt/lastclick/bin/lastclick
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+### Frontend
+
+```bash
+cat > /etc/systemd/system/lastclick-web.service << 'EOF'
+[Unit]
+Description=LastClick Frontend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/lastclick/web
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+Environment=BACKEND_URL=http://127.0.0.1:8080
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+### Enable and start
+
+```bash
+systemctl daemon-reload
+systemctl enable --now lastclick lastclick-web
+```
+
+---
+
+## 6. TLS Certificates
+
+```bash
+apt install -y certbot python3-certbot-nginx
+certbot --nginx -d lastclick.vsevex.me
+```
+
+Certbot auto-configures nginx SSL and sets up renewal.
+
+---
+
+## 7. Nginx Config
+
+Replace `/etc/nginx/conf.d/lastclick.conf`:
+
+```nginx
+upstream backend {
+    server 127.0.0.1:8080;
+    keepalive 32;
+}
+
+upstream frontend {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name lastclick.vsevex.me;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name lastclick.vsevex.me;
+
+    ssl_certificate     /etc/letsencrypt/live/lastclick.vsevex.me/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/lastclick.vsevex.me/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    client_max_body_size 10m;
+
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options DENY;
+    add_header X-XSS-Protection "1; mode=block";
+    add_header Referrer-Policy no-referrer-when-downgrade;
+
+    location /ws {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass http://backend;
+    }
+
+    location /metrics {
+        allow 127.0.0.1;
+        deny all;
+        proxy_pass http://backend;
+    }
+
+    location / {
+        proxy_pass http://frontend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+nginx -t && systemctl reload nginx
+```
+
+---
+
+## 8. Telegram Webhook
+
+```bash
+curl "https://api.telegram.org/bot<your-bot-token>/setWebhook?url=https://lastclick.vsevex.me"
+```
+
+---
+
+## 9. Redeploy Workflow
+
+Run locally after code changes:
+
+```powershell
+# Build
+$env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
+cd web; $env:NEXT_PUBLIC_WS_URL="wss://lastclick.vsevex.me"; npm run build; cd ..
+
+# Upload
+scp bin/lastclick root@<server-ip>:/opt/lastclick/
+scp -r web/.next/standalone/* root@<server-ip>:/opt/lastclick/web/
+scp -r web/.next/static root@<server-ip>:/opt/lastclick/web/.next/static
+
+# Restart on server
+ssh root@<server-ip> "systemctl restart lastclick lastclick-web"
+```
+
+---
+
+## 10. Useful Commands
+
+```bash
+# Logs
+journalctl -u lastclick -f
+journalctl -u lastclick-web -f
+
+# Status
+systemctl status lastclick lastclick-web
+
+# Run migrations
+cd /opt/lastclick && ./goose -dir migrations postgres "$DATABASE_URL" up
+
+# Rollback last migration
+cd /opt/lastclick && ./goose -dir migrations postgres "$DATABASE_URL" down
+```
