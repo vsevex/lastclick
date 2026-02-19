@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/lastclick/lastclick/internal/room"
@@ -35,10 +36,12 @@ type SimEvent struct {
 type SimPlayerStat struct {
 	Alive        bool
 	PulseCount   int
-	StarsSpent   int64
+	StarsSpent   int64 // = entry cost (pulses are free)
 	EliminatedAt int
 	Efficiency   float64
 	ShardsEarned int64
+	Placement    int   // 1-based ranking
+	Payout       int64 // star payout for top finishers
 }
 
 type SimResult struct {
@@ -50,6 +53,7 @@ type SimResult struct {
 	FinalMargin  float64
 	FinalVolMul  float64
 	PlayerStats  map[int64]*SimPlayerStat
+	Placements   []int64
 }
 
 // RunSimulation executes a fully deterministic game loop. No goroutines, no
@@ -73,25 +77,26 @@ func RunSimulation(cfg SimConfig) SimResult {
 	}
 	r.State = room.StateSurvival
 	for _, p := range r.AlivePlayers() {
-		p.LastPulseAt = time.Time{} // zero; we track via tick numbers
+		p.LastPulseAt = time.Time{}
 	}
 
 	stats := make(map[int64]*SimPlayerStat, len(cfg.PlayerIDs))
 	for _, pid := range cfg.PlayerIDs {
-		stats[pid] = &SimPlayerStat{Alive: true}
+		stats[pid] = &SimPlayerStat{Alive: true, StarsSpent: cfg.Tier.EntryCost}
 	}
 
 	lastPulseTick := make(map[int64]int)
 	lastPulseTickForWindow := make(map[int64]int)
 	for _, pid := range cfg.PlayerIDs {
-		lastPulseTickForWindow[pid] = 0 // survival starts at tick 0
+		lastPulseTickForWindow[pid] = 0
 	}
 
 	var events []SimEvent
+	var eliminationOrder []int64
 	silent := cfg.SilentMode
 	marginRatio := 0.0
 	volMul := 1.0
-	minPulseGap := int(500*time.Millisecond/simTickRate) + 1 // 500ms / 250ms = 2 ticks, need gap > 2 → ≥ 3 actually ceil(500/250)=2
+	minPulseGap := int(500*time.Millisecond/simTickRate) + 1
 
 	result := SimResult{PlayerStats: stats}
 
@@ -110,7 +115,7 @@ func RunSimulation(cfg SimConfig) SimResult {
 			}
 		}
 
-		// 2. Process pulses
+		// 2. Process pulses (free — no star cost)
 		if pulses, ok := cfg.PulseSchedule[tick]; ok {
 			for _, pid := range pulses {
 				st := stats[pid]
@@ -121,9 +126,7 @@ func RunSimulation(cfg SimConfig) SimResult {
 					continue
 				}
 
-				// Pulse accepted
 				st.PulseCount++
-				st.StarsSpent++
 				lastPulseTick[pid] = tick
 				lastPulseTickForWindow[pid] = tick
 
@@ -148,8 +151,8 @@ func RunSimulation(cfg SimConfig) SimResult {
 			r.GlobalTimer = 0
 		}
 
-		// 4. Pulse window check
-		pulseWindowTicks := int(cfg.Tier.PulseWindow / simTickRate)
+		// 4. Pulse window check (with latency grace)
+		pulseWindowTicks := int(cfg.Tier.PulseWindow/simTickRate) + LatencyGraceTicks
 		for _, pid := range cfg.PlayerIDs {
 			st := stats[pid]
 			if !st.Alive {
@@ -159,6 +162,7 @@ func RunSimulation(cfg SimConfig) SimResult {
 			if ticksSincePulse > pulseWindowTicks {
 				st.Alive = false
 				st.EliminatedAt = tick
+				eliminationOrder = append(eliminationOrder, pid)
 				r.Eliminate(pid)
 				if !silent {
 					events = append(events, SimEvent{
@@ -201,6 +205,41 @@ func RunSimulation(cfg SimConfig) SimResult {
 		}
 	}
 
+	// Compute placements: alive sorted by pulse count desc, then eliminated in reverse order
+	type pidCount struct {
+		pid   int64
+		count int
+	}
+	var aliveSorted []pidCount
+	for _, pid := range cfg.PlayerIDs {
+		if stats[pid].Alive {
+			aliveSorted = append(aliveSorted, pidCount{pid, stats[pid].PulseCount})
+		}
+	}
+	// Hash-based deterministic shuffle — latency-neutral co-survivor ranking
+	tickSeed := int64(result.TotalTicks) * 7919
+	mix := func(id int64) int64 {
+		h := id ^ (tickSeed * 2654435761)
+		h ^= h >> 16
+		h *= 0x45d9f3b
+		h ^= h >> 16
+		return h
+	}
+	sort.Slice(aliveSorted, func(i, j int) bool {
+		return mix(aliveSorted[i].pid) < mix(aliveSorted[j].pid)
+	})
+	placements := make([]int64, 0, len(cfg.PlayerIDs))
+	for _, a := range aliveSorted {
+		placements = append(placements, a.pid)
+	}
+	for i := len(eliminationOrder) - 1; i >= 0; i-- {
+		placements = append(placements, eliminationOrder[i])
+	}
+	result.Placements = placements
+	if len(placements) > 0 {
+		result.WinnerID = placements[0]
+	}
+
 	// Compute final stats
 	result.Events = events
 	result.FinalTimer = r.GlobalTimer
@@ -208,9 +247,14 @@ func RunSimulation(cfg SimConfig) SimResult {
 	result.FinalVolMul = volMul
 
 	pool := int64(len(cfg.PlayerIDs)) * cfg.Tier.EntryCost
+	payouts := PlacementPayouts(pool, len(cfg.PlayerIDs))
+	topPlaces := len(payouts)
 
-	for _, pid := range cfg.PlayerIDs {
+	for i, pid := range placements {
 		st := stats[pid]
+		place := i + 1
+		st.Placement = place
+
 		survivalTicks := result.TotalTicks
 		if st.EliminatedAt > 0 {
 			survivalTicks = st.EliminatedAt
@@ -218,19 +262,27 @@ func RunSimulation(cfg SimConfig) SimResult {
 		survivalDur := time.Duration(survivalTicks) * simTickRate
 		st.Efficiency = SurvivalEfficiency(survivalDur, volMul, st.StarsSpent)
 
-		if pid == result.WinnerID {
-			st.ShardsEarned = 0 // winner gets payout, not shards
+		if place <= topPlaces {
+			for _, pp := range payouts {
+				if pp.Place == place {
+					st.Payout = pp.Amount
+					break
+				}
+			}
+			st.ShardsEarned = 0
 		} else {
-			st.ShardsEarned = ShardsFromBurn(st.StarsSpent, volMul)
+			st.ShardsEarned = ShardsForLoser(cfg.Tier.EntryCost, volMul, place)
 		}
 	}
 
-	// Verify payout
-	if result.WinnerID != 0 && !silent {
-		events = append(events, SimEvent{
-			Type:   "finish",
-			Detail: fmt.Sprintf("winner=%d payout=%d rake=%d pool=%d", result.WinnerID, WinnerPayout(pool), RakeAmount(pool), pool),
-		})
+	if !silent && len(placements) > 0 {
+		detail := fmt.Sprintf("pool=%d rake=%d placements:", pool, RakeAmount(pool))
+		for _, pp := range payouts {
+			if pp.Place-1 < len(placements) {
+				detail += fmt.Sprintf(" %d→%d★", pp.Place, pp.Amount)
+			}
+		}
+		events = append(events, SimEvent{Type: "finish", Detail: detail})
 		result.Events = events
 	}
 
