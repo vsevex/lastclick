@@ -1,112 +1,106 @@
-/**
- * Last Click - Game Type Definitions
- * Core interfaces for the game simulation, state management, and UI
- */
+// ===== Room =====
+export type RoomType = "alpha" | "blitz";
+export type RoomState = "waiting" | "active" | "survival" | "finished";
 
-// ===== Room & Game Configuration =====
-export interface Room {
+export interface RoomInfo {
   id: string;
-  name: string;
-  volatility: number; // 0.5 - 5.0 (percent per update cycle)
-  playerCount: number;
-  maxPlayers: number;
-  minBuyIn: number;
-  startingWhaleLong: number;
-  description: string;
+  type: RoomType;
+  tier: number;
+  state: RoomState;
+  players: number;
+  pool: number;
 }
 
-// ===== Player & Account =====
+export interface RoomStatePayload {
+  room_id: string;
+  state: RoomState;
+  type: RoomType;
+  tier: number;
+  pool: number;
+  alive: number;
+  total: number;
+  timer_ms: number;
+  margin_ratio: number;
+  volatility_mul: number;
+  winner_id: number;
+}
+
+export interface TickPayload {
+  timer_ms: number;
+  margin_ratio: number;
+  volatility_mul: number;
+  alive: number;
+}
+
+export interface EliminationPayload {
+  player_id: number;
+  alive: number;
+}
+
+export interface PulseAckPayload {
+  player_id: number;
+  extension_ms: number;
+  timer_ms: number;
+}
+
+// ===== Player (from REST /api/player/{id}) =====
 export interface PlayerProfile {
-  id: string;
-  username: string;
-  avatar: string;
-  tier: "Bronze" | "Silver" | "Gold" | "Platinum" | "Diamond";
-  seasonalRank: number;
-  totalSurvivalTime: number;
-  bestEfficiency: number;
-  totalGamesPlayed: number;
-  shards: number;
-  squadId?: string;
-  squadName?: string;
-  cosmetics: {
-    avatar: string;
-    nameplate: string;
-    particleEffect: string;
-  };
-}
-
-export interface PlayerState {
-  id: string;
-  username: string;
-  avatar: string;
-  stars: number;
-  shards: number;
-  efficiency: number;
-  isAlive: boolean;
-  survivalTime: number;
-  leaderboardPosition: number;
-}
-
-// ===== Whale Position & Price =====
-export interface WhalePosition {
-  currentPrice: number;
-  liquidationPrice: number;
-  volatility: number; // Volatility multiplier for efficiency scoring
-  priceHistory: number[]; // Last 100 prices for chart
-  liquidationProximity: number; // Percentage distance from liquidation
-}
-
-// ===== Survival Phase =====
-export interface SurvivalPhase {
-  isActive: boolean;
-  timeRemaining: number; // Seconds
-  pulsesRequired: number; // Number of Pulse clicks needed
-  pulseWindow: number; // Time window to click Pulse (seconds)
-  survivorCount: number;
-  players: PlayerState[];
-  lastUpdateTime: number;
-}
-
-// ===== Game State =====
-export interface GameState {
-  roomId: string;
-  currentRoom: Room;
-  playerState: PlayerState;
-  whalePosition: WhalePosition;
-  survivalPhase: SurvivalPhase;
-  leaderboard: PlayerState[];
-  gameStatus: "waiting" | "active" | "finished";
-  elapsedTime: number;
-  roundStartTime: number;
-}
-
-// ===== Cosmetics & Store =====
-export interface CosmeticItem {
-  id: string;
-  name: string;
-  category: "avatar" | "nameplate" | "particle";
-  price: number; // In shards
-  rarity: "common" | "rare" | "epic" | "legendary";
-  description: string;
-}
-
-export interface CosmeticStore {
-  avatars: CosmeticItem[];
-  nameplates: CosmeticItem[];
-  particles: CosmeticItem[];
-}
-
-// ===== Game Engine Events =====
-export interface GameEngineUpdate {
-  timestamp: number;
-  whalePosition: WhalePosition;
-  liquidationProximity: number;
-  survivalPhaseTriggered: boolean;
-  playersEliminated: string[];
+  ID: number;
+  Username: string;
+  Elo: number;
+  LifetimeElo: number;
+  EfficiencyAvg: number;
+  StarsBalance: number;
+  ShardsBalance: number;
+  SquadID: string | null;
+  PrestigeMult: number;
+  CreatedAt: string;
 }
 
 // ===== Leaderboard =====
-export interface LeaderboardEntry extends PlayerState {
-  squadName?: string;
-  timedOut: boolean;
+export interface LeaderboardEntry {
+  PlayerID: number;
+  Score: number;
+  Rank: number;
 }
+
+// ===== Tier Config (mirrors backend room.Tiers) =====
+export interface TierConfig {
+  tier: number;
+  entryCost: number;
+  minPlayers: number;
+  maxPlayers: number;
+  pulseWindowSec: number;
+  survivalTimeSec: number;
+  prestigeMult: number;
+}
+
+export const TIERS: Record<number, TierConfig> = {
+  1: {
+    tier: 1,
+    entryCost: 5,
+    minPlayers: 3,
+    maxPlayers: 20,
+    pulseWindowSec: 5,
+    survivalTimeSec: 120,
+    prestigeMult: 1.0,
+  },
+  2: {
+    tier: 2,
+    entryCost: 20,
+    minPlayers: 5,
+    maxPlayers: 30,
+    pulseWindowSec: 4,
+    survivalTimeSec: 150,
+    prestigeMult: 1.5,
+  },
+  3: {
+    tier: 3,
+    entryCost: 100,
+    minPlayers: 5,
+    maxPlayers: 50,
+    pulseWindowSec: 3,
+    survivalTimeSec: 180,
+    prestigeMult: 2.0,
+  },
+};
