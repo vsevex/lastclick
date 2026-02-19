@@ -211,6 +211,43 @@ func (e *Engine) finishRoom(r *room.Room) {
 	if e.onEnd != nil {
 		e.onEnd(r)
 	}
+
+	go func() {
+		time.Sleep(30 * time.Second)
+		e.rooms.Remove(r.ID)
+		e.EnsureRooms()
+	}()
+}
+
+// systemSlots defines the rooms the system keeps available at all times.
+var systemSlots = []struct {
+	Type room.RoomType
+	Tier int
+}{
+	{room.RoomBlitz, 1},
+	{room.RoomBlitz, 2},
+	{room.RoomAlpha, 3},
+}
+
+// EnsureRooms guarantees at least one waiting room per system slot.
+func (e *Engine) EnsureRooms() {
+	waiting := e.rooms.ListByState(room.StateWaiting)
+	for _, slot := range systemSlots {
+		found := false
+		for _, r := range waiting {
+			if r.Type == slot.Type && r.Tier.Tier == slot.Tier {
+				found = true
+				break
+			}
+		}
+		if !found {
+			r, err := e.rooms.Create(slot.Type, slot.Tier)
+			if err == nil {
+				e.logger.Info("system room created",
+					"type", string(r.Type), "tier", r.Tier.Tier, "id", r.ID)
+			}
+		}
+	}
 }
 
 // HandleMessage implements server.MessageHandler.
@@ -232,6 +269,7 @@ func (e *Engine) HandleMessage(ctx context.Context, client *server.Client, msg s
 			e.broadcastState(r)
 			if r.CanStart() {
 				e.StartRoom(ctx, r.ID)
+				e.EnsureRooms()
 			}
 		}
 
@@ -268,30 +306,6 @@ func (e *Engine) HandleMessage(ctx context.Context, client *server.Client, msg s
 		payload, _ := json.Marshal(list)
 		e.hub.SendTo(client.ID, server.WSMessage{Type: "room_list", Payload: payload})
 
-	case "create_room":
-		var payload struct {
-			Type string `json:"type"`
-			Tier int    `json:"tier"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			return
-		}
-		rt := room.RoomBlitz
-		if payload.Type == "alpha" {
-			rt = room.RoomAlpha
-		}
-		r, err := e.rooms.Create(rt, payload.Tier)
-		if err != nil {
-			return
-		}
-		resp, _ := json.Marshal(map[string]any{
-			"room_id": r.ID,
-			"type":    string(r.Type),
-			"tier":    r.Tier.Tier,
-			"state":   r.State.String(),
-			"pool":    r.Pool,
-		})
-		e.hub.SendTo(client.ID, server.WSMessage{Type: "room_created", Payload: resp})
 	}
 }
 
