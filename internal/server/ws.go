@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -36,6 +37,7 @@ type Hub struct {
 	rooms    map[string]map[int64]*Client
 	handler  MessageHandler
 	botToken string
+	devMode  bool
 	logger   *slog.Logger
 }
 
@@ -44,26 +46,47 @@ type MessageHandler interface {
 	HandleMessage(ctx context.Context, client *Client, msg WSMessage)
 }
 
-func NewHub(botToken string, handler MessageHandler, logger *slog.Logger) *Hub {
+func NewHub(botToken string, devMode bool, handler MessageHandler, logger *slog.Logger) *Hub {
 	return &Hub{
 		clients:  make(map[int64]*Client),
 		rooms:    make(map[string]map[int64]*Client),
 		handler:  handler,
 		botToken: botToken,
+		devMode:  devMode,
 		logger:   logger,
 	}
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	initData := r.URL.Query().Get("initData")
-	if err := auth.ValidateInitData(initData, h.botToken); err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
 
-	userID, err := extractUserID(initData)
-	if err != nil {
-		http.Error(w, "bad init data", http.StatusBadRequest)
+	var userID int64
+	var err error
+
+	if initData != "" {
+		if authErr := auth.ValidateInitData(initData, h.botToken); authErr != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID, err = extractUserID(initData)
+		if err != nil {
+			http.Error(w, "bad init data", http.StatusBadRequest)
+			return
+		}
+	} else if h.devMode {
+		uidStr := r.URL.Query().Get("user_id")
+		if uidStr == "" {
+			userID = 1
+		} else {
+			userID, err = strconv.ParseInt(uidStr, 10, 64)
+			if err != nil {
+				http.Error(w, "bad user_id", http.StatusBadRequest)
+				return
+			}
+		}
+		h.logger.Info("dev mode ws connect", "user_id", userID)
+	} else {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
