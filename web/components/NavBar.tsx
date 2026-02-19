@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/context/GameContext";
@@ -23,11 +24,7 @@ export function NavBar({
     <div className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-sm safe-top">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 group">
-          <div className="w-8 h-8 rounded bg-linear-to-br from-primary to-accent flex items-center justify-center group-hover:shadow-lg group-hover:shadow-primary/20 transition-all">
-            <span className="text-xs font-bold text-primary-foreground">
-              LC
-            </span>
-          </div>
+          <Image src="/icon.png" alt="LC" width={28} height={28} priority />
           <span className="font-bold text-foreground hidden sm:inline">
             {title || "Last Click"}
           </span>
