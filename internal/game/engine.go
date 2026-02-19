@@ -26,12 +26,12 @@ type roomRunner struct {
 
 // Engine orchestrates all active game rooms.
 type Engine struct {
-	rooms       *room.Manager
-	hub         *server.Hub
-	logger      *slog.Logger
-	onEnd       EndCallback
-	mu          sync.Mutex
-	running     map[string]*roomRunner
+	rooms        *room.Manager
+	hub          *server.Hub
+	logger       *slog.Logger
+	onEnd        EndCallback
+	mu           sync.Mutex
+	running      map[string]*roomRunner
 	pulseLimiter *PulseRateLimiter
 }
 
@@ -284,7 +284,14 @@ func (e *Engine) HandleMessage(ctx context.Context, client *server.Client, msg s
 		if err != nil {
 			return
 		}
-		e.broadcastState(r)
+		resp, _ := json.Marshal(map[string]any{
+			"room_id": r.ID,
+			"type":    string(r.Type),
+			"tier":    r.Tier.Tier,
+			"state":   r.State.String(),
+			"pool":    r.Pool,
+		})
+		e.hub.SendTo(client.ID, server.WSMessage{Type: "room_created", Payload: resp})
 	}
 }
 
