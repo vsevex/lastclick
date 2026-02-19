@@ -105,6 +105,8 @@ func main() {
 	hub := server.NewHub(cfg.BotToken, cfg.Env == "development", engine, logger)
 	engine.SetHub(hub)
 
+	engine.EnsureRooms()
+
 	srv := server.New(cfg, db, rdb, hub, logger)
 	srv.SetPlayerStore(playerStore)
 
