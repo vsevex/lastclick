@@ -58,20 +58,32 @@ func main() {
 		endCtx, endCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer endCancel()
 
-		rake := game.RakeAmount(r.Pool)
-		payout := game.WinnerPayout(r.Pool)
+		pool := r.Pool
+		rake := game.RakeAmount(pool)
+		placements := r.Placements()
+		payouts := game.PlacementPayouts(pool, len(r.Players))
 
-		if r.WinnerID != 0 {
-			_ = playerStore.UpdateBalance(endCtx, r.WinnerID, payout, 0)
-			roomID := r.ID
-			_ = txStore.Record(endCtx, r.WinnerID, store.TxPayout, payout, &roomID)
+		placementMap := make(map[int64]int, len(placements))
+		for i, pid := range placements {
+			placementMap[pid] = i + 1
+		}
+
+		topPlaces := len(payouts)
+		for _, pp := range payouts {
+			if pp.Place-1 < len(placements) {
+				pid := placements[pp.Place-1]
+				_ = playerStore.UpdateBalance(endCtx, pid, pp.Amount, 0)
+				roomID := r.ID
+				_ = txStore.Record(endCtx, pid, store.TxPayout, pp.Amount, &roomID)
+			}
 		}
 
 		for _, p := range r.Players {
-			if p.ID == r.WinnerID {
+			place := placementMap[p.ID]
+			if place > 0 && place <= topPlaces {
 				continue
 			}
-			shards := game.ShardsFromBurn(p.StarsSpent, r.VolatilityMul)
+			shards := game.ShardsForLoser(r.Tier.EntryCost, r.VolatilityMul, place)
 			if shards > 0 {
 				_ = playerStore.UpdateBalance(endCtx, p.ID, 0, shards)
 				roomID := r.ID
@@ -94,9 +106,9 @@ func main() {
 		logger.Info("room finished",
 			"room", r.ID,
 			"winner", r.WinnerID,
-			"pool", r.Pool,
+			"pool", pool,
 			"rake", rake,
-			"payout", payout,
+			"placements", len(placements),
 		)
 	}
 
