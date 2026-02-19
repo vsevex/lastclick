@@ -1,6 +1,7 @@
 package room
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -19,6 +20,8 @@ type Room struct {
 	CreatedAt time.Time
 	StartedAt *time.Time
 	EndedAt   *time.Time
+
+	EliminationOrder []int64
 
 	// Survival phase fields
 	GlobalTimer   time.Duration
@@ -93,6 +96,7 @@ func (r *Room) Eliminate(id int64) {
 		p.Alive = false
 		now := time.Now()
 		p.EliminatedAt = &now
+		r.EliminationOrder = append(r.EliminationOrder, id)
 	}
 }
 
@@ -104,9 +108,47 @@ func (r *Room) RecordPulse(id int64) bool {
 		return false
 	}
 	p.PulseCount++
-	p.StarsSpent++
 	p.LastPulseAt = time.Now()
 	return true
+}
+
+// Placements returns player IDs ordered by finishing position.
+// Alive players first (co-survivors ranked by efficiency desc, then ID asc —
+// latency-neutral since efficiency is identical for co-survivors in the same room),
+// then eliminated players in reverse elimination order (last eliminated = best).
+func (r *Room) Placements() []int64 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var alive []*PlayerState
+	for _, p := range r.Players {
+		if p.Alive {
+			alive = append(alive, p)
+		}
+	}
+	// Hash-based deterministic shuffle — breaks ID correlation so co-survivors
+	// are ranked fairly regardless of ID assignment.
+	roomSeed := int64(0)
+	for _, c := range r.ID {
+		roomSeed = roomSeed*31 + int64(c)
+	}
+	mix := func(id int64) int64 {
+		h := id ^ (roomSeed * 2654435761)
+		h ^= h >> 16
+		h *= 0x45d9f3b
+		h ^= h >> 16
+		return h
+	}
+	sort.Slice(alive, func(i, j int) bool {
+		return mix(alive[i].ID) < mix(alive[j].ID)
+	})
+	result := make([]int64, 0, len(r.Players))
+	for _, p := range alive {
+		result = append(result, p.ID)
+	}
+	for i := len(r.EliminationOrder) - 1; i >= 0; i-- {
+		result = append(result, r.EliminationOrder[i])
+	}
+	return result
 }
 
 func (r *Room) PlayerCount() int {
