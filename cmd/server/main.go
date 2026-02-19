@@ -102,10 +102,11 @@ func main() {
 
 	// Wire engine and hub (circular dependency resolved via SetHub)
 	engine := game.NewEngine(rooms, nil, logger, onEnd)
-	hub := server.NewHub(cfg.BotToken, engine, logger)
+	hub := server.NewHub(cfg.BotToken, cfg.Env == "development", engine, logger)
 	engine.SetHub(hub)
 
 	srv := server.New(cfg, db, rdb, hub, logger)
+	srv.SetPlayerStore(playerStore)
 
 	// Squad service
 	squadSvc := squad.NewService(squadStore, playerStore, logger)
