@@ -1,0 +1,10 @@
+# Node.js
+node_modules
+
+# Next.js
+.next
+
+# OS Related
+.DS_Store
+Thumbs.db
+ehthumbs.db
