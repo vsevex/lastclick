@@ -23,6 +23,7 @@ type Server struct {
 	hub         *Hub
 	logger      *slog.Logger
 	mux         *http.ServeMux
+	players     *store.PlayerStore
 	squadSvc    *squad.Service
 	leaderboard *leaderboard.Service
 	seasons     *store.SeasonStore
@@ -45,7 +46,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, rdb *redis.Client, hub *Hub, logg
 	return s
 }
 
-// SetSquadService sets the squad service (to break init order dependency).
+func (s *Server) SetPlayerStore(ps *store.PlayerStore) {
+	s.players = ps
+}
+
 func (s *Server) SetSquadService(svc *squad.Service) {
 	s.squadSvc = svc
 }
@@ -61,6 +65,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/squads/leave", s.handleLeaveSquad)
 	s.mux.HandleFunc("GET /api/squads/{id}", s.handleGetSquad)
 
+	// Player endpoint
+	s.mux.HandleFunc("GET /api/player/{id}", s.handleGetPlayer)
+
 	// Leaderboard endpoints
 	s.mux.HandleFunc("GET /api/leaderboard/players", s.handlePlayerLeaderboard)
 	s.mux.HandleFunc("GET /api/leaderboard/squads", s.handleSquadLeaderboard)
@@ -68,6 +75,29 @@ func (s *Server) routes() {
 
 	// Static files for Mini App
 	s.mux.Handle("GET /", http.FileServer(http.Dir("web")))
+}
+
+func (s *Server) handleGetPlayer(w http.ResponseWriter, r *http.Request) {
+	if s.players == nil {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	pidStr := r.PathValue("id")
+	pid, err := strconv.ParseInt(pidStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad player id", http.StatusBadRequest)
+		return
+	}
+	player, err := s.players.Get(r.Context(), pid)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if player == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, player)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
