@@ -183,7 +183,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }),
     ];
     return () => unsubs.forEach((fn) => fn());
-  }, [on]);
+  }, [on, connected]);
 
   useEffect(() => {
     if (connected) send("list_rooms");
