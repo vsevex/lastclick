@@ -259,13 +259,18 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       }),
       engine.on("round_transition", (data) => {
         const t = data as { roomId: string; to: RoundState };
-        dispatch({ type: "ROUND_TRANSITION", roundState: t.to });
+        const isCurrentRoom = t.roomId === engineRef.current?.getLocalRoomId();
+        if (isCurrentRoom) {
+          dispatch({ type: "ROUND_TRANSITION", roundState: t.to });
+        }
 
-        const room = engine.getRoom(t.roomId);
-        if (room) dispatch({ type: "ENGINE_ROOM", room });
+        if (isCurrentRoom) {
+          const room = engine.getRoom(t.roomId);
+          if (room) dispatch({ type: "ENGINE_ROOM", room });
 
-        const lp = engine.getPlayerInRoom(t.roomId, userId ?? 1);
-        if (lp) dispatch({ type: "PLAYER_STATE", playerState: lp.state });
+          const lp = engine.getPlayerInRoom(t.roomId, userId ?? 1);
+          if (lp) dispatch({ type: "PLAYER_STATE", playerState: lp.state });
+        }
       }),
       engine.on("payout", (data) => {
         const p = data as { playerId: number; amount: number; rank: number };
