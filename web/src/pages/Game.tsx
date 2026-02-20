@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { SurvivalPhase } from "@/components/game/SurvivalPhase";
 import { LeaderboardPanel } from "@/components/game/LeaderboardPanel";
 import { WhalePositionCard } from "@/components/game/WhalePositionCard";
@@ -15,8 +15,70 @@ const PriceChart = lazy(() =>
 );
 
 export default function Game() {
-  const { state } = useGame();
+  const { state, clearRoom } = useGame();
   const room = state.currentRoom;
+  const gameActive = room && room.state !== "finished";
+
+  useEffect(() => {
+    if (!gameActive) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [gameActive]);
+
+  if (state.forfeited) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="text-center space-y-4 max-w-sm">
+          <div className="w-16 h-16 mx-auto rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center">
+            <span className="text-2xl">&#9760;</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-destructive">
+            Forfeited
+          </h1>
+          <p className="text-muted-foreground">
+            You left the room. Entry fee is lost.
+          </p>
+          <Link to="/rooms" onClick={clearRoom}>
+            <Button className="bg-primary hover:bg-primary/90 min-h-[44px]">
+              Back to Rooms
+            </Button>
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (state.selfEliminated && room) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="text-center space-y-4 max-w-sm">
+          <div className="w-16 h-16 mx-auto rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center">
+            <span className="text-2xl">&#9889;</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-destructive">
+            Eliminated
+          </h1>
+          <p className="text-muted-foreground">
+            You were liquidated. Margin exceeded the threshold.
+          </p>
+          <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
+            <span>
+              {room.alive}/{room.total} alive
+            </span>
+            <span>Pool: {room.pool}&#9733;</span>
+          </div>
+          <Link to="/rooms" onClick={clearRoom}>
+            <Button className="bg-primary hover:bg-primary/90 min-h-[44px]">
+              Back to Rooms
+            </Button>
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   if (!room) {
     return (
@@ -75,7 +137,7 @@ export default function Game() {
                 <p className="text-sm text-muted-foreground">
                   Pool: {room.pool} Stars
                 </p>
-                <Link to="/rooms">
+                <Link to="/rooms" onClick={clearRoom}>
                   <Button className="bg-primary hover:bg-primary/90 min-h-[44px]">
                     Play Again
                   </Button>
