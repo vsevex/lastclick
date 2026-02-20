@@ -75,6 +75,7 @@ export interface TierConfig {
   prestigeMult: number;
 }
 
+// Survival cap 90–110s: high energy, ~mean session, avoid endurance fatigue
 export const TIERS: Record<number, TierConfig> = {
   1: {
     tier: 1,
@@ -82,7 +83,7 @@ export const TIERS: Record<number, TierConfig> = {
     minPlayers: 3,
     maxPlayers: 20,
     pulseWindowSec: 5,
-    survivalTimeSec: 120,
+    survivalTimeSec: 90,
     prestigeMult: 1.0,
   },
   2: {
@@ -91,7 +92,7 @@ export const TIERS: Record<number, TierConfig> = {
     minPlayers: 5,
     maxPlayers: 30,
     pulseWindowSec: 4,
-    survivalTimeSec: 150,
+    survivalTimeSec: 100,
     prestigeMult: 1.5,
   },
   3: {
@@ -100,7 +101,7 @@ export const TIERS: Record<number, TierConfig> = {
     minPlayers: 5,
     maxPlayers: 50,
     pulseWindowSec: 3,
-    survivalTimeSec: 180,
+    survivalTimeSec: 110,
     prestigeMult: 2.0,
   },
 };
