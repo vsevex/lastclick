@@ -8,16 +8,15 @@ Build locally on Windows, upload artifacts, run natively on the server. No Docke
 
 ### Backend (Go → Linux binary)
 
-```powershell
-$env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
+```bash
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
 ```
 
 ### Frontend (Vite SPA)
 
-```powershell
+```bash
 cd web
-$env:VITE_WS_URL="wss://lastclick.vsevex.me"
-npm run build
+VITE_WS_URL="wss://lastclick.vsevex.me" npm run build
 cd ..
 ```
 
@@ -25,16 +24,16 @@ This produces `web/dist/` with static files (HTML, JS, CSS).
 
 ### Install goose locally (one-time)
 
-```powershell
+```bash
 go install github.com/pressly/goose/v3/cmd/goose@latest
-$env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/goose github.com/pressly/goose/v3/cmd/goose
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/goose github.com/pressly/goose/v3/cmd/goose
 ```
 
 ---
 
 ## 2. Upload to Server
 
-```powershell
+```bash
 scp bin/lastclick root@<server-ip>:/opt/lastclick/
 scp bin/goose root@<server-ip>:/opt/lastclick/
 scp -r migrations root@<server-ip>:/opt/lastclick/
@@ -260,10 +259,10 @@ curl "https://api.telegram.org/bot<your-bot-token>/setWebhook?url=https://lastcl
 
 Run locally after code changes:
 
-```powershell
+```bash
 # Build
-$env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
-cd web; $env:VITE_WS_URL="wss://lastclick.vsevex.me"; npm run build; cd ..
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
+cd web && VITE_WS_URL="wss://lastclick.vsevex.me" npm run build && cd ..
 
 # Upload
 scp bin/lastclick root@<server-ip>:/opt/lastclick/
