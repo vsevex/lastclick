@@ -44,6 +44,7 @@ type TierConfig struct {
 	PrestigeMult  float64
 }
 
+// Survival cap 90–110s: high energy, ~mean session, avoid endurance fatigue
 var Tiers = map[int]TierConfig{
 	1: {
 		Tier:          1,
@@ -52,7 +53,7 @@ var Tiers = map[int]TierConfig{
 		MaxPlayers:    20,
 		PulseWindow:   5 * time.Second,
 		BaseExtension: 3 * time.Second,
-		SurvivalTime:  120 * time.Second,
+		SurvivalTime:  90 * time.Second,
 		PrestigeMult:  1.0,
 	},
 	2: {
@@ -62,7 +63,7 @@ var Tiers = map[int]TierConfig{
 		MaxPlayers:    30,
 		PulseWindow:   4 * time.Second,
 		BaseExtension: 2500 * time.Millisecond,
-		SurvivalTime:  150 * time.Second,
+		SurvivalTime:  100 * time.Second,
 		PrestigeMult:  1.5,
 	},
 	3: {
@@ -72,7 +73,7 @@ var Tiers = map[int]TierConfig{
 		MaxPlayers:    50,
 		PulseWindow:   3 * time.Second,
 		BaseExtension: 2 * time.Second,
-		SurvivalTime:  180 * time.Second,
+		SurvivalTime:  110 * time.Second,
 		PrestigeMult:  2.0,
 	},
 }
