@@ -4,6 +4,9 @@ node_modules
 # Vite
 dist
 
+# TypeScript
+*.tsbuildinfo
+
 # OS Related
 .DS_Store
 Thumbs.db
