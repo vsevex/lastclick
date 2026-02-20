@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useSocket } from "@/context/SocketContext";
 import { useTelegram } from "@/context/TelegramProvider";
-import { getPlayer } from "@/lib/api";
+import { getPlayer, NotFoundError } from "@/lib/api";
 import type {
   RoomInfo,
   RoomStatePayload,
@@ -22,6 +22,7 @@ interface GameState {
   player: PlayerProfile | null;
   playerLoading: boolean;
   playerError: boolean;
+  playerNotFound: boolean;
   rooms: RoomInfo[];
   currentRoom: RoomStatePayload | null;
   marginHistory: number[];
@@ -34,6 +35,7 @@ const initialState: GameState = {
   player: null,
   playerLoading: false,
   playerError: false,
+  playerNotFound: false,
   rooms: [],
   currentRoom: null,
   marginHistory: [],
@@ -46,6 +48,7 @@ type Action =
   | { type: "SET_PLAYER"; player: PlayerProfile }
   | { type: "PLAYER_LOADING" }
   | { type: "PLAYER_ERROR" }
+  | { type: "PLAYER_NOT_FOUND" }
   | { type: "SET_ROOMS"; rooms: RoomInfo[] }
   | { type: "ROOM_STATE"; payload: RoomStatePayload }
   | { type: "TICK"; payload: TickPayload }
@@ -61,13 +64,32 @@ function reducer(state: GameState, action: Action): GameState {
         player: action.player,
         playerLoading: false,
         playerError: false,
+        playerNotFound: false,
       };
 
     case "PLAYER_LOADING":
-      return { ...state, playerLoading: true, playerError: false };
+      return {
+        ...state,
+        playerLoading: true,
+        playerError: false,
+        playerNotFound: false,
+      };
 
     case "PLAYER_ERROR":
-      return { ...state, playerLoading: false, playerError: true };
+      return {
+        ...state,
+        playerLoading: false,
+        playerError: true,
+        playerNotFound: false,
+      };
+
+    case "PLAYER_NOT_FOUND":
+      return {
+        ...state,
+        playerLoading: false,
+        playerError: false,
+        playerNotFound: true,
+      };
 
     case "SET_ROOMS":
       return { ...state, rooms: action.rooms };
@@ -170,7 +192,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "PLAYER_LOADING" });
     getPlayer(userId)
       .then((p) => dispatch({ type: "SET_PLAYER", player: p }))
-      .catch(() => dispatch({ type: "PLAYER_ERROR" }));
+      .catch((e) => {
+        if (e instanceof NotFoundError) {
+          dispatch({ type: "PLAYER_NOT_FOUND" });
+        } else {
+          dispatch({ type: "PLAYER_ERROR" });
+        }
+      });
   }, [userId]);
 
   useEffect(() => {
@@ -213,8 +241,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const pulse = useCallback(() => send("pulse"), [send]);
 
   const leaveRoom = useCallback(() => {
+    send("leave_room");
     dispatch({ type: "LEAVE_ROOM" });
-  }, []);
+  }, [send]);
 
   return (
     <GameContext.Provider
