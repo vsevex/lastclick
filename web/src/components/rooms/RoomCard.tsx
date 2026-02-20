@@ -7,11 +7,8 @@ import { useGame } from "@/context/GameContext";
 export function RoomCard({ room }: { room: RoomInfo }) {
   const { joinRoom } = useGame();
   const tier = TIERS[room.tier];
-  // Join allowed: waiting, countdown (active), round complete (finished). Never during survival.
-  const canJoin =
-    room.state === "waiting" ||
-    room.state === "active" ||
-    room.state === "finished";
+  // Join allowed: waiting or countdown (active) only. Never during survival or after finished.
+  const canJoin = room.state === "waiting" || room.state === "active";
 
   const stateColor =
     room.state === "waiting" || room.state === "active"
