@@ -1,0 +1,31 @@
+{
+  "root": [
+    "./src/app.tsx",
+    "./src/main.tsx",
+    "./src/components/navbar.tsx",
+    "./src/components/game/gameheader.tsx",
+    "./src/components/game/leaderboardpanel.tsx",
+    "./src/components/game/pricechart.tsx",
+    "./src/components/game/squadinfo.tsx",
+    "./src/components/game/survivalphase.tsx",
+    "./src/components/game/whalepositioncard.tsx",
+    "./src/components/landing/herosection.tsx",
+    "./src/components/profile/profileheader.tsx",
+    "./src/components/rooms/roomcard.tsx",
+    "./src/components/ui/button.tsx",
+    "./src/context/gamecontext.tsx",
+    "./src/context/socketcontext.tsx",
+    "./src/context/telegramprovider.tsx",
+    "./src/lib/api.ts",
+    "./src/lib/telegram.d.ts",
+    "./src/lib/utils.ts",
+    "./src/lib/ws.ts",
+    "./src/pages/game.tsx",
+    "./src/pages/home.tsx",
+    "./src/pages/profile.tsx",
+    "./src/pages/rooms.tsx",
+    "./src/pages/store.tsx",
+    "./src/types/game.ts"
+  ],
+  "version": "5.7.3"
+}
