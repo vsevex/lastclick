@@ -47,20 +47,23 @@ export function TelegramProvider({ children }: { children: ReactNode }) {
 
 async function initTelegram(): Promise<TelegramContextType> {
   try {
+    const { ensureTelegramEnv } = await import("@/lib/mockEnv");
+    await ensureTelegramEnv();
+
     const sdk = await import("@telegram-apps/sdk");
     sdk.init();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lp = sdk.retrieveLaunchParams() as any;
-    const initDataRaw: string | null = lp.initDataRaw ?? null;
-    const user = lp.initData?.user as
-      | { id?: number; username?: string; firstName?: string }
+    const lp = sdk.retrieveLaunchParams() as Record<string, unknown>;
+    const initDataRaw: string | null = (lp.initDataRaw as string) ?? null;
+    const initData = lp.initData as
+      | { user?: { id?: number; username?: string; firstName?: string } }
       | undefined;
+    const user = initData?.user;
     const userId: number | null = user?.id ?? null;
     const username: string | null = user?.username ?? user?.firstName ?? null;
 
     try {
-      sdk.miniApp.mountSync();
+      sdk.miniApp.mount();
       sdk.miniApp.setHeaderColor("#0B0F14");
       sdk.miniApp.setBackgroundColor("#0B0F14");
     } catch (e) {
@@ -83,7 +86,7 @@ async function initTelegram(): Promise<TelegramContextType> {
     console.info("[TG] initialized", {
       userId,
       username,
-      initDataRaw: !!initDataRaw,
+      hasInitData: !!initDataRaw,
     });
     return { ready: true, userId, initDataRaw, username };
   } catch (e) {
