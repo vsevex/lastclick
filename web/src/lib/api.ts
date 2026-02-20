@@ -1,7 +1,15 @@
 import type { PlayerProfile, LeaderboardEntry } from "@/types/game";
 
+export class NotFoundError extends Error {
+  constructor(url: string) {
+    super(`Not found: ${url}`);
+    this.name = "NotFoundError";
+  }
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const res = await fetch(url);
+  if (res.status === 404) throw new NotFoundError(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
