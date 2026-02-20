@@ -36,6 +36,7 @@ export class GameEngine {
   };
   private botTimers: number[] = [];
   private lastTickTime = 0;
+  private roundCompleteResetTimeouts = new Map<string, number>();
 
   constructor(
     localPlayerId: number,
@@ -56,6 +57,10 @@ export class GameEngine {
     return { id: this.localPlayerId, stars: this.stars, shards: this.shards };
   }
 
+  getConfig(): EngineConfig {
+    return this.config;
+  }
+
   getRooms(): RoomInfo[] {
     const out: RoomInfo[] = [];
     for (const room of this.rooms.values()) out.push(this.toRoomInfo(room));
@@ -72,6 +77,68 @@ export class GameEngine {
 
   getLocalRoomId(): string | null {
     return this.playerRoomMap.get(this.localPlayerId) ?? null;
+  }
+
+  /** Reset round and transition to WAITING (next round). Room persists; keeps players together. */
+  resetRound(roomId: string) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    const t = this.roundCompleteResetTimeouts.get(roomId);
+    if (t != null) {
+      clearTimeout(t);
+      this.roundCompleteResetTimeouts.delete(roomId);
+    }
+
+    // Only reset from ROUND_COMPLETE (or LIQUIDATED already transitioned there)
+    if (room.roundState !== RoundState.ROUND_COMPLETE) return;
+
+    // Remove players who left the room; they don't stay for next round
+    for (const [id, p] of [...room.players.entries()]) {
+      if (p.state === PlayerState.LEFT) {
+        room.players.delete(id);
+        this.playerRoomMap.delete(id);
+      }
+    }
+
+    // Reset remaining players for next round
+    const tier = TIERS[room.tier];
+    for (const player of room.players.values()) {
+      player.state = PlayerState.JOINED;
+      player.lastPulseTimestamp = 0;
+      player.isAlive = true;
+      player.starsSpent = 0;
+      player.timeSurvived = 0;
+      player.eliminatedAt = null;
+      player.payout = 0;
+      player.shardsEarned = 0;
+    }
+
+    // Reset room round state; room identity (id, type, tier) unchanged
+    room.pool = 0;
+    room.roundPaid = false;
+    room.winnerId = null;
+    room.top3 = [];
+    room.timerMs = 0;
+    room.marginRatio = 0;
+    room.volatilityMul = 1;
+    room.countdownMs = 0;
+    room.survivalStartedAt = null;
+
+    this.volatilityModels.delete(room.id);
+    room.roundState = RoundState.WAITING_FOR_PLAYERS;
+
+    this.emitRoomState(room);
+    this.emit("room_list", this.getRooms());
+    this.emit("round_transition", {
+      roomId: room.id,
+      from: RoundState.ROUND_COMPLETE,
+      to: RoundState.WAITING_FOR_PLAYERS,
+    });
+
+    if (tier && room.players.size >= tier.minPlayers) {
+      this.transitionRoom(room, RoundState.COUNTDOWN);
+    }
   }
 
   dispatch(event: GameEvent) {
@@ -153,6 +220,8 @@ export class GameEngine {
     }
     for (const t of this.botTimers) clearTimeout(t);
     this.botTimers = [];
+    for (const t of this.roundCompleteResetTimeouts.values()) clearTimeout(t);
+    this.roundCompleteResetTimeouts.clear();
     this.listeners.clear();
   }
 
@@ -473,10 +542,18 @@ export class GameEngine {
         return;
       }
 
-      case RoundState.ROUND_COMPLETE:
+      case RoundState.ROUND_COMPLETE: {
         this.distributePayout(room);
         this.creditShards(room);
+        // Room persists. Schedule transition to WAITING (next round). Short delay = fast loop.
+        const delayMs = this.config.roundCompleteDelayMs;
+        const t = window.setTimeout(() => {
+          this.roundCompleteResetTimeouts.delete(room.id);
+          this.resetRound(room.id);
+        }, delayMs) as unknown as number;
+        this.roundCompleteResetTimeouts.set(room.id, t);
         break;
+      }
     }
 
     this.emitRoomState(room);
