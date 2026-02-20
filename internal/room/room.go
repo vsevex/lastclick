@@ -43,10 +43,12 @@ func NewRoom(id string, roomType RoomType, tier TierConfig) *Room {
 	}
 }
 
+// AddPlayer adds a player only when join is allowed: WAITING, COUNTDOWN (active), or ROUND_COMPLETE (finished).
+// SURVIVAL and LIQUIDATED (mid/finish) are locked so no midgame join.
 func (r *Room) AddPlayer(id int64, username string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.State != StateWaiting {
+	if r.State == StateSurvival {
 		return false
 	}
 	if len(r.Players) >= r.Tier.MaxPlayers {
@@ -164,4 +166,30 @@ func (r *Room) CanStart() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.State == StateWaiting && len(r.Players) >= r.Tier.MinPlayers
+}
+
+// ResetRound puts the room back to StateWaiting for the next round. Room is not destroyed.
+// Call after StateFinished (e.g. after liquidation or round end). Preserves room identity and players.
+func (r *Room) ResetRound() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.State != StateFinished {
+		return false
+	}
+	r.State = StateWaiting
+	r.Pool = 0
+	r.WinnerID = 0
+	r.StartedAt = nil
+	r.EndedAt = nil
+	r.EliminationOrder = nil
+	r.GlobalTimer = r.Tier.SurvivalTime
+	r.MarginRatio = 0
+	r.VolatilityMul = 1.0
+	for _, p := range r.Players {
+		p.Alive = true
+		p.PulseCount = 0
+		p.StarsSpent = 0
+		p.EliminatedAt = nil
+	}
+	return true
 }
