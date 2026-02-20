@@ -80,6 +80,8 @@ export interface DebugCommand {
 export interface EngineConfig {
   tickIntervalMs: number;
   countdownDurationMs: number;
+  /** Results screen → auto next round. 10–20s for fast loop / retention. */
+  roundCompleteDelayMs: number;
   shardRate: number;
   botCount: number;
   botJoinDelayMs: number;
@@ -88,6 +90,7 @@ export interface EngineConfig {
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   tickIntervalMs: 100,
   countdownDurationMs: 5000,
+  roundCompleteDelayMs: 15_000,
   shardRate: 0.5,
   botCount: 8,
   botJoinDelayMs: 500,
