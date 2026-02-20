@@ -100,16 +100,19 @@ func (r *Room) Eliminate(id int64) {
 	}
 }
 
-func (r *Room) RecordPulse(id int64) bool {
+// RecordPulse records a pulse at server time. Caller must be in survival phase.
+// Returns (ok, pulseTimestamp). Only updates state if ok.
+func (r *Room) RecordPulse(id int64) (bool, time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p, ok := r.Players[id]
 	if !ok || !p.Alive {
-		return false
+		return false, time.Time{}
 	}
+	now := time.Now()
 	p.PulseCount++
-	p.LastPulseAt = time.Now()
-	return true
+	p.LastPulseAt = now
+	return true, now
 }
 
 // Placements returns player IDs ordered by finishing position.
