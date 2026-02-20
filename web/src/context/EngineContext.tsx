@@ -342,6 +342,11 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     engineRef.current?.debugCommand(cmd);
   }, []);
 
+  const resetRound = useCallback(() => {
+    const rid = engineRef.current?.getLocalRoomId();
+    if (rid) engineRef.current?.resetRound(rid);
+  }, []);
+
   const simulateDisconnect = useCallback(() => {
     const rid = engineRef.current?.getLocalRoomId();
     if (!rid) return;
@@ -375,6 +380,9 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     engine: {
       isPrototype: true,
       debugCommand,
+      resetRound,
+      roundCompleteDelayMs:
+        engineRef.current?.getConfig?.()?.roundCompleteDelayMs ?? 15_000,
       engineRoom: state.engineRoom,
       roundState: state.roundState,
       playerState: state.playerState,
