@@ -23,8 +23,8 @@ export function GameHeader() {
             {room.type.toUpperCase()} T{room.tier}
           </h1>
           <p className="text-xs text-muted-foreground">
-            {room.state} &middot; {room.alive}/{room.total} alive
-            {tier && ` &middot; ${tier.entryCost}★`}
+            {room.state} · {room.alive}/{room.total} alive
+            {tier && ` · ${tier.entryCost}★`}
           </p>
         </div>
 
