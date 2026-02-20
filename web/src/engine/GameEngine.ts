@@ -18,11 +18,16 @@ import {
 } from "./types";
 import { VolatilityModel } from "./VolatilityModel";
 
+/** Chart baseline when round is armed (COUNTDOWN → SURVIVAL). Not used for elimination. */
+const ROUND_BASELINE_MARGIN = 0.15;
+
 type Listener = (data: unknown) => void;
 
 export class GameEngine {
   private rooms = new Map<string, EngineRoom>();
   private volatilityModels = new Map<string, VolatilityModel>();
+  /** Theater only: moves chart during WAITING. Never used for survival or elimination. */
+  private theaterModels = new Map<string, VolatilityModel>();
   private playerRoomMap = new Map<number, string>();
   private localPlayerId: number;
   private stars: number;
@@ -126,6 +131,7 @@ export class GameEngine {
     room.survivalStartedAt = null;
 
     this.volatilityModels.delete(room.id);
+    this.theaterModels.delete(room.id);
     room.roundState = RoundState.WAITING_FOR_PLAYERS;
 
     this.emitRoomState(room);
@@ -256,8 +262,12 @@ export class GameEngine {
   private handleJoinRoom(event: GameEvent) {
     const room = this.rooms.get(event.roomId);
     if (!room) return;
-    // No late join: only allow join while waiting. No re-entry after countdown/survival.
-    if (room.roundState !== RoundState.WAITING_FOR_PLAYERS) return;
+    // Join allowed in WAITING or COUNTDOWN (locked at 0 when SURVIVAL starts).
+    if (
+      room.roundState !== RoundState.WAITING_FOR_PLAYERS &&
+      room.roundState !== RoundState.COUNTDOWN
+    )
+      return;
 
     const tier = TIERS[room.tier];
     if (!tier) return;
@@ -272,13 +282,21 @@ export class GameEngine {
       // Entry deducted when countdown starts, not on join (stops volatility-scout)
     }
 
+    const joiningDuringCountdown = room.roundState === RoundState.COUNTDOWN;
+    const starsSpent = joiningDuringCountdown ? tier.entryCost : 0;
+    if (joiningDuringCountdown && isLocal) {
+      this.stars -= tier.entryCost;
+      this.emit("balance", { stars: this.stars, shards: this.shards });
+    }
+    if (joiningDuringCountdown) room.pool += tier.entryCost;
+
     const player: EnginePlayer = {
       id: event.playerId,
       username: isLocal ? "You" : `Bot_${event.playerId}`,
       state: PlayerState.JOINED,
       lastPulseTimestamp: event.timestamp,
       isAlive: true,
-      starsSpent: 0, // set when countdown starts
+      starsSpent,
       timeSurvived: 0,
       joinedAt: event.timestamp,
       eliminatedAt: null,
@@ -289,7 +307,6 @@ export class GameEngine {
     };
 
     room.players.set(event.playerId, player);
-    // pool updated when countdown starts (entry deduction before survival)
     this.playerRoomMap.set(event.playerId, room.id);
 
     if (isLocal) {
@@ -428,6 +445,19 @@ export class GameEngine {
 
   private tickRoom(room: EngineRoom, dtMs: number, now: number) {
     switch (room.roundState) {
+      case RoundState.WAITING_FOR_PLAYERS: {
+        let theater = this.theaterModels.get(room.id);
+        if (!theater) {
+          theater = new VolatilityModel(room.tier);
+          this.theaterModels.set(room.id, theater);
+        }
+        const { marginRatio, volatilityMul } = theater.tick(dtMs);
+        room.marginRatio = marginRatio;
+        room.volatilityMul = volatilityMul;
+        this.emitRoomState(room);
+        break;
+      }
+
       case RoundState.COUNTDOWN:
         room.countdownMs -= dtMs;
         if (room.countdownMs <= 0) {
@@ -496,8 +526,11 @@ export class GameEngine {
 
     switch (newState) {
       case RoundState.COUNTDOWN: {
+        this.theaterModels.delete(room.id);
+        room.marginRatio = ROUND_BASELINE_MARGIN;
+        room.volatilityMul = 1;
         room.countdownMs = this.config.countdownDurationMs;
-        // Entry deduction BEFORE survival: charge everyone now. No late join after this.
+        // Entry deduction: charge everyone already in room. Late join during countdown charged on join.
         const tier = TIERS[room.tier];
         if (tier) {
           for (const player of room.players.values()) {
