@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 
 export default function ProfilePage() {
   const { state, refreshPlayer } = useGame();
-  const { userId } = useTelegram();
+  const { userId, username } = useTelegram();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState<LeaderboardEntry | null>(null);
 
@@ -38,6 +38,30 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-6 sm:py-12">
         {state.player ? (
           <ProfileHeader />
+        ) : state.playerError ? (
+          <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm p-5 sm:p-8">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+              <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl bg-linear-to-br from-primary/50 to-accent/50 flex items-center justify-center text-2xl sm:text-4xl font-bold text-foreground border-2 border-border/50">
+                {username?.[0]?.toUpperCase() ?? "?"}
+              </div>
+              <div className="flex-1">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-1 sm:mb-2">
+                  {username ?? "Player"}
+                </h1>
+                <p className="text-muted-foreground mb-3">
+                  Could not load stats from server
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshPlayer}
+                  className="min-h-[36px]"
+                >
+                  Retry
+                </Button>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="rounded-lg border border-border/50 bg-card/50 p-8 text-center">
             <p className="text-muted-foreground">Loading profile...</p>
