@@ -38,8 +38,7 @@ export function SurvivalPhase() {
             </div>
           </div>
           <p className="text-muted-foreground text-sm">
-            {room.alive} players alive &middot; Vol{" "}
-            {room.volatility_mul.toFixed(1)}x
+            {room.alive} players alive · Vol {room.volatility_mul.toFixed(1)}x
           </p>
         </div>
 
