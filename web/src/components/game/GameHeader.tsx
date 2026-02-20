@@ -1,10 +1,12 @@
-import { Link } from "react-router-dom";
+import { useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useGame } from "@/context/GameContext";
 import { Button } from "@/components/ui/button";
 import { TIERS } from "@/types/game";
 
 export function GameHeader() {
-  const { state, leaveRoom } = useGame();
+  const { state, forfeit } = useGame();
+  const navigate = useNavigate();
   const room = state.currentRoom;
   if (!room) return null;
 
@@ -12,6 +14,22 @@ export function GameHeader() {
   const timerSec = Math.max(0, Math.ceil(room.timer_ms / 1000));
   const min = Math.floor(timerSec / 60);
   const sec = timerSec % 60;
+  const isSurvival = room.state === "survival";
+
+  const handleExit = useCallback(() => {
+    if (room.state === "finished") {
+      navigate("/rooms");
+      return;
+    }
+
+    const msg = isSurvival
+      ? "Leaving during survival = immediate elimination. Entry fee is lost. Are you sure?"
+      : "Leaving the room will forfeit your entry fee. Are you sure?";
+
+    if (window.confirm(msg)) {
+      forfeit();
+    }
+  }, [forfeit, navigate, room.state, isSurvival]);
 
   return (
     <div className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-sm safe-top">
@@ -42,15 +60,18 @@ export function GameHeader() {
             </p>
           </div>
 
-          <Link to="/rooms" onClick={leaveRoom}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground min-h-[40px]"
-            >
-              Exit
-            </Button>
-          </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleExit}
+            className={`min-h-[40px] ${
+              isSurvival
+                ? "text-destructive hover:text-destructive hover:bg-destructive/10"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {isSurvival ? "Forfeit" : "Exit"}
+          </Button>
         </div>
       </div>
     </div>
