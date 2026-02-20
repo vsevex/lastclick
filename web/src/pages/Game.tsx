@@ -168,11 +168,26 @@ export default function Game() {
                     +{engine.shardCredit} Shards earned
                   </p>
                 )}
-                <Link to="/rooms" onClick={clearRoom}>
-                  <Button className="bg-primary hover:bg-primary/90 min-h-[44px]">
-                    Play Again
-                  </Button>
-                </Link>
+                <p className="text-xs text-muted-foreground">
+                  Room stays open. Next round in{" "}
+                  {(engine?.roundCompleteDelayMs ?? 15_000) / 1000}s or start
+                  now.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                  {engine?.resetRound != null && (
+                    <Button
+                      className="bg-primary hover:bg-primary/90 min-h-[44px]"
+                      onClick={() => engine.resetRound()}
+                    >
+                      Next round
+                    </Button>
+                  )}
+                  <Link to="/rooms" onClick={clearRoom}>
+                    <Button variant="outline" className="min-h-[44px]">
+                      Back to rooms
+                    </Button>
+                  </Link>
+                </div>
               </div>
             )}
           </div>
