@@ -187,6 +187,7 @@ export class GameEngine {
   private handleJoinRoom(event: GameEvent) {
     const room = this.rooms.get(event.roomId);
     if (!room) return;
+    // No late join: only allow join while waiting. No re-entry after countdown/survival.
     if (room.roundState !== RoundState.WAITING_FOR_PLAYERS) return;
 
     const tier = TIERS[room.tier];
@@ -199,7 +200,7 @@ export class GameEngine {
         this.emit("error", { message: "Insufficient stars" });
         return;
       }
-      this.stars -= tier.entryCost;
+      // Entry deducted when countdown starts, not on join (stops volatility-scout)
     }
 
     const player: EnginePlayer = {
@@ -208,7 +209,7 @@ export class GameEngine {
       state: PlayerState.JOINED,
       lastPulseTimestamp: event.timestamp,
       isAlive: true,
-      starsSpent: tier.entryCost,
+      starsSpent: 0, // set when countdown starts
       timeSurvived: 0,
       joinedAt: event.timestamp,
       eliminatedAt: null,
@@ -219,7 +220,7 @@ export class GameEngine {
     };
 
     room.players.set(event.playerId, player);
-    room.pool += tier.entryCost;
+    // pool updated when countdown starts (entry deduction before survival)
     this.playerRoomMap.set(event.playerId, room.id);
 
     if (isLocal) {
@@ -228,7 +229,7 @@ export class GameEngine {
     }
 
     this.emit("room_list", this.getRooms());
-    this.emit("balance", { stars: this.stars, shards: this.shards });
+    // balance emitted when countdown starts (on deduction)
 
     if (room.players.size >= tier.minPlayers) {
       this.transitionRoom(room, RoundState.COUNTDOWN);
@@ -423,9 +424,22 @@ export class GameEngine {
     room.roundState = newState;
 
     switch (newState) {
-      case RoundState.COUNTDOWN:
+      case RoundState.COUNTDOWN: {
         room.countdownMs = this.config.countdownDurationMs;
+        // Entry deduction BEFORE survival: charge everyone now. No late join after this.
+        const tier = TIERS[room.tier];
+        if (tier) {
+          for (const player of room.players.values()) {
+            player.starsSpent = tier.entryCost;
+            room.pool += tier.entryCost;
+            if (player.id === this.localPlayerId) {
+              this.stars -= tier.entryCost;
+            }
+          }
+          this.emit("balance", { stars: this.stars, shards: this.shards });
+        }
         break;
+      }
 
       case RoundState.SURVIVAL_PHASE: {
         room.survivalStartedAt = Date.now();
