@@ -255,6 +255,7 @@ export class GameEngine {
       player_id: event.playerId,
       extension_ms: pulseWindowMs,
       timer_ms: room.timerMs,
+      server_time_ms: event.timestamp,
     };
 
     this.emit("pulse_ack", ack);

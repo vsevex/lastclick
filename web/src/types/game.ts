@@ -41,6 +41,8 @@ export interface PulseAckPayload {
   player_id: number;
   extension_ms: number;
   timer_ms: number;
+  /** Server time when pulse was recorded (for cooldown / display). */
+  server_time_ms?: number;
 }
 
 // ===== Player (from REST /api/player/{id}) =====
