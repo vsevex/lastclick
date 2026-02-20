@@ -60,28 +60,34 @@ async function initTelegram(): Promise<TelegramContextType> {
     const username: string | null = user?.username ?? user?.firstName ?? null;
 
     try {
-      sdk.miniApp.mount();
+      sdk.miniApp.mountSync();
       sdk.miniApp.setHeaderColor("#0B0F14");
       sdk.miniApp.setBackgroundColor("#0B0F14");
-    } catch {
-      /* optional */
+    } catch (e) {
+      console.warn("[TG] miniApp mount failed:", e);
     }
 
     try {
       await sdk.viewport.mount();
       sdk.viewport.expand();
-    } catch {
-      /* optional */
+    } catch (e) {
+      console.warn("[TG] viewport mount failed:", e);
     }
 
     try {
       sdk.miniApp.ready();
-    } catch {
-      /* optional */
+    } catch (e) {
+      console.warn("[TG] miniApp.ready failed:", e);
     }
 
+    console.info("[TG] initialized", {
+      userId,
+      username,
+      initDataRaw: !!initDataRaw,
+    });
     return { ready: true, userId, initDataRaw, username };
-  } catch {
+  } catch (e) {
+    console.warn("[TG] SDK init failed, using fallback:", e);
     return { ready: true, userId: 1, initDataRaw: null, username: "Guest" };
   }
 }
