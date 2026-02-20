@@ -29,6 +29,8 @@ interface GameState {
   eliminated: number[];
   lastPulseAck: PulseAckPayload | null;
   isInRoom: boolean;
+  selfEliminated: boolean;
+  forfeited: boolean;
 }
 
 const initialState: GameState = {
@@ -42,6 +44,8 @@ const initialState: GameState = {
   eliminated: [],
   lastPulseAck: null,
   isInRoom: false,
+  selfEliminated: false,
+  forfeited: false,
 };
 
 type Action =
@@ -54,7 +58,8 @@ type Action =
   | { type: "TICK"; payload: TickPayload }
   | { type: "ELIMINATION"; payload: EliminationPayload }
   | { type: "PULSE_ACK"; payload: PulseAckPayload }
-  | { type: "LEAVE_ROOM" };
+  | { type: "FORFEIT" }
+  | { type: "CLEAR_ROOM" };
 
 function reducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -99,6 +104,8 @@ function reducer(state: GameState, action: Action): GameState {
         ...state,
         currentRoom: action.payload,
         isInRoom: true,
+        selfEliminated: false,
+        forfeited: false,
         marginHistory:
           state.currentRoom?.room_id === action.payload.room_id
             ? state.marginHistory
@@ -135,6 +142,8 @@ function reducer(state: GameState, action: Action): GameState {
           alive: action.payload.alive,
         },
         eliminated: [...state.eliminated, action.payload.player_id],
+        selfEliminated:
+          state.selfEliminated || action.payload.player_id === state.player?.ID,
       };
     }
 
@@ -150,7 +159,10 @@ function reducer(state: GameState, action: Action): GameState {
       };
     }
 
-    case "LEAVE_ROOM":
+    case "FORFEIT":
+      return { ...state, forfeited: true };
+
+    case "CLEAR_ROOM":
       return {
         ...state,
         currentRoom: null,
@@ -158,6 +170,8 @@ function reducer(state: GameState, action: Action): GameState {
         marginHistory: [],
         eliminated: [],
         lastPulseAck: null,
+        selfEliminated: false,
+        forfeited: false,
       };
 
     default:
@@ -170,7 +184,8 @@ interface GameContextType {
   listRooms: () => void;
   joinRoom: (roomId: string) => void;
   pulse: () => void;
-  leaveRoom: () => void;
+  forfeit: () => void;
+  clearRoom: () => void;
   refreshPlayer: () => void;
 }
 
@@ -229,8 +244,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return () => unsubs.forEach((fn) => fn());
   }, [on, connected]);
 
+  // On reconnect, request sync so server restores room state if still alive
   useEffect(() => {
-    if (connected) send("list_rooms");
+    if (connected) {
+      send("sync");
+      send("list_rooms");
+    }
   }, [connected, send]);
 
   const listRooms = useCallback(() => send("list_rooms"), [send]);
@@ -240,14 +259,26 @@ export function GameProvider({ children }: { children: ReactNode }) {
   );
   const pulse = useCallback(() => send("pulse"), [send]);
 
-  const leaveRoom = useCallback(() => {
-    send("leave_room");
-    dispatch({ type: "LEAVE_ROOM" });
+  const forfeit = useCallback(() => {
+    send("forfeit");
+    dispatch({ type: "FORFEIT" });
   }, [send]);
+
+  const clearRoom = useCallback(() => {
+    dispatch({ type: "CLEAR_ROOM" });
+  }, []);
 
   return (
     <GameContext.Provider
-      value={{ state, listRooms, joinRoom, pulse, leaveRoom, refreshPlayer }}
+      value={{
+        state,
+        listRooms,
+        joinRoom,
+        pulse,
+        forfeit,
+        clearRoom,
+        refreshPlayer,
+      }}
     >
       {children}
     </GameContext.Provider>
