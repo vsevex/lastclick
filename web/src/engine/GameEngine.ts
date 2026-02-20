@@ -397,6 +397,7 @@ export class GameEngine {
       }
     }
 
+    this.checkWinCondition(room);
     this.emitRoomState(room);
     this.emit("reconnect_state", {
       playerId: event.playerId,
@@ -589,16 +590,10 @@ export class GameEngine {
 
     const alive = this.countAlive(room);
     const total = room.players.size;
+    const roundOver = (alive <= 3 && total > 3) || alive === 1 || alive === 0;
 
-    if (alive <= 3 && total > 3) {
-      this.finalizeActiveSurvivors(room);
-      this.assignRankings(room);
-      this.transitionRoom(room, RoundState.ROUND_COMPLETE);
-    } else if (alive === 1 && total > 1) {
-      this.finalizeActiveSurvivors(room);
-      this.assignRankings(room);
-      this.transitionRoom(room, RoundState.ROUND_COMPLETE);
-    } else if (alive === 0) {
+    if (roundOver) {
+      if (alive >= 1) this.finalizeActiveSurvivors(room);
       this.assignRankings(room);
       this.transitionRoom(room, RoundState.ROUND_COMPLETE);
     }
@@ -620,7 +615,11 @@ export class GameEngine {
       .sort((a, b) => b.timeSurvived - a.timeSurvived);
 
     const eliminated = [...room.players.values()]
-      .filter((p) => p.state === PlayerState.ELIMINATED)
+      .filter(
+        (p) =>
+          p.state === PlayerState.ELIMINATED ||
+          p.state === PlayerState.DISCONNECTED,
+      )
       .sort((a, b) => b.timeSurvived - a.timeSurvived);
 
     const ranked = [...active, ...eliminated];
@@ -674,7 +673,8 @@ export class GameEngine {
     for (const player of room.players.values()) {
       if (
         player.state === PlayerState.ELIMINATED ||
-        player.state === PlayerState.LEFT
+        player.state === PlayerState.LEFT ||
+        player.state === PlayerState.DISCONNECTED
       ) {
         player.shardsEarned = Math.floor(
           tier.entryCost * this.config.shardRate,
@@ -703,11 +703,15 @@ export class GameEngine {
       tier.maxPlayers - room.players.size,
     );
 
+    let botIdCounter = 0;
     for (let i = 0; i < botCount; i++) {
       const delay = (i + 1) * this.config.botJoinDelayMs + Math.random() * 500;
       const timer = window.setTimeout(() => {
         if (room.roundState !== RoundState.WAITING_FOR_PLAYERS) return;
-        const botId = 10000 + Math.floor(Math.random() * 90000);
+        let botId: number;
+        do {
+          botId = 10000 + botIdCounter++;
+        } while (room.players.has(botId));
         this.processEvent({
           type: "JOIN_ROOM",
           playerId: botId,
