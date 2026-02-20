@@ -43,12 +43,12 @@ func NewRoom(id string, roomType RoomType, tier TierConfig) *Room {
 	}
 }
 
-// AddPlayer adds a player only when join is allowed: WAITING, COUNTDOWN (active), or ROUND_COMPLETE (finished).
-// SURVIVAL and LIQUIDATED (mid/finish) are locked so no midgame join.
+// AddPlayer adds a player only when join is allowed: WAITING or COUNTDOWN (active).
+// SURVIVAL and FINISHED are locked so no midgame or post-round join.
 func (r *Room) AddPlayer(id int64, username string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.State == StateSurvival {
+	if r.State == StateSurvival || r.State == StateFinished {
 		return false
 	}
 	if len(r.Players) >= r.Tier.MaxPlayers {
