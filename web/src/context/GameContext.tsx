@@ -17,6 +17,12 @@ import type {
   PulseAckPayload,
   PlayerProfile,
 } from "@/types/game";
+import type {
+  DebugCommand,
+  EngineRoom,
+  RoundState,
+  PlayerState,
+} from "@/engine/types";
 
 interface GameState {
   player: PlayerProfile | null;
@@ -179,7 +185,19 @@ function reducer(state: GameState, action: Action): GameState {
   }
 }
 
-interface GameContextType {
+export interface EngineExtras {
+  isPrototype: true;
+  debugCommand: (cmd: DebugCommand) => void;
+  engineRoom: EngineRoom | null;
+  roundState: RoundState | null;
+  playerState: PlayerState | null;
+  payoutInfo: { amount: number; rank: number } | null;
+  shardCredit: number | null;
+  simulateDisconnect: () => void;
+  simulateReconnect: () => void;
+}
+
+export interface GameContextType {
   state: GameState;
   listRooms: () => void;
   joinRoom: (roomId: string) => void;
@@ -187,9 +205,12 @@ interface GameContextType {
   forfeit: () => void;
   clearRoom: () => void;
   refreshPlayer: () => void;
+  engine?: EngineExtras;
 }
 
-const GameContext = createContext<GameContextType | undefined>(undefined);
+export const GameContext = createContext<GameContextType | undefined>(
+  undefined,
+);
 
 export function useGame() {
   const ctx = useContext(GameContext);
