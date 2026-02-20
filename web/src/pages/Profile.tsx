@@ -36,6 +36,27 @@ export default function Profile() {
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-6 sm:py-12">
         {state.player ? (
           <ProfileHeader />
+        ) : state.playerNotFound ? (
+          <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm p-5 sm:p-8">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+              <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl bg-linear-to-br from-primary/50 to-accent/50 flex items-center justify-center text-2xl sm:text-4xl font-bold text-foreground border-2 border-border/50">
+                {username?.[0]?.toUpperCase() ?? "?"}
+              </div>
+              <div className="flex-1">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-1 sm:mb-2">
+                  {username ?? "Player"}
+                </h1>
+                <p className="text-muted-foreground mb-3">
+                  New player — join a game to create your profile
+                </p>
+                <Link to="/rooms">
+                  <Button className="bg-primary hover:bg-primary/90 min-h-[36px]">
+                    Play Now
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
         ) : state.playerError ? (
           <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm p-5 sm:p-8">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
@@ -68,7 +89,7 @@ export default function Profile() {
 
         <div className="grid sm:grid-cols-2 gap-4 sm:gap-6 mt-6 sm:mt-8">
           <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm p-5 sm:p-6">
-            <h2 className="text-lg sm:text-xl font-bold text-foreground mb-5 sm:mb-6">
+            <h2 className="text-lg sm:text-xl font-bold text-foreground mb-3">
               Your Rank
             </h2>
             {myRank ? (
@@ -99,7 +120,7 @@ export default function Profile() {
           </div>
 
           <div className="rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm p-5 sm:p-6">
-            <h2 className="text-lg sm:text-xl font-bold text-foreground mb-5 sm:mb-6">
+            <h2 className="text-lg sm:text-xl font-bold text-foreground mb-3">
               Account
             </h2>
             <div className="space-y-3">
