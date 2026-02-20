@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Analytics } from "@vercel/analytics/next";
 import { TelegramProvider } from "@/context/TelegramProvider";
 import { SocketProvider } from "@/context/SocketContext";
 import { GameProvider } from "@/context/GameContext";
@@ -41,7 +40,6 @@ export default function RootLayout({
             <GameProvider>{children}</GameProvider>
           </SocketProvider>
         </TelegramProvider>
-        <Analytics />
       </body>
     </html>
   );
