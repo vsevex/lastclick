@@ -19,7 +19,7 @@ export function ProfileHeader() {
             {player.Username}
           </h1>
           <p className="text-muted-foreground mb-3 sm:mb-4">
-            Elo {player.Elo} &middot; Lifetime {player.LifetimeElo}
+            Elo {player.Elo} · Lifetime {player.LifetimeElo}
           </p>
 
           <div className="flex flex-wrap gap-4 sm:gap-6">
