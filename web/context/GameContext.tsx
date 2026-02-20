@@ -22,6 +22,8 @@ import type {
 
 interface GameState {
   player: PlayerProfile | null;
+  playerLoading: boolean;
+  playerError: boolean;
   rooms: RoomInfo[];
   currentRoom: RoomStatePayload | null;
   marginHistory: number[];
@@ -32,6 +34,8 @@ interface GameState {
 
 const initialState: GameState = {
   player: null,
+  playerLoading: false,
+  playerError: false,
   rooms: [],
   currentRoom: null,
   marginHistory: [],
@@ -42,6 +46,8 @@ const initialState: GameState = {
 
 type Action =
   | { type: "SET_PLAYER"; player: PlayerProfile }
+  | { type: "PLAYER_LOADING" }
+  | { type: "PLAYER_ERROR" }
   | { type: "SET_ROOMS"; rooms: RoomInfo[] }
   | { type: "ROOM_STATE"; payload: RoomStatePayload }
   | { type: "TICK"; payload: TickPayload }
@@ -52,7 +58,18 @@ type Action =
 function reducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "SET_PLAYER":
-      return { ...state, player: action.player };
+      return {
+        ...state,
+        player: action.player,
+        playerLoading: false,
+        playerError: false,
+      };
+
+    case "PLAYER_LOADING":
+      return { ...state, playerLoading: true, playerError: false };
+
+    case "PLAYER_ERROR":
+      return { ...state, playerLoading: false, playerError: true };
 
     case "SET_ROOMS":
       return { ...state, rooms: action.rooms };
@@ -152,9 +169,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const refreshPlayer = useCallback(() => {
     if (!userId) return;
+    dispatch({ type: "PLAYER_LOADING" });
     getPlayer(userId)
       .then((p) => dispatch({ type: "SET_PLAYER", player: p }))
-      .catch(() => {});
+      .catch(() => dispatch({ type: "PLAYER_ERROR" }));
   }, [userId]);
 
   useEffect(() => {
