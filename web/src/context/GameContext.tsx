@@ -188,6 +188,9 @@ function reducer(state: GameState, action: Action): GameState {
 export interface EngineExtras {
   isPrototype: true;
   debugCommand: (cmd: DebugCommand) => void;
+  resetRound: () => void;
+  /** Results → next round delay (ms). 10–20s for fast loop. */
+  roundCompleteDelayMs: number;
   engineRoom: EngineRoom | null;
   roundState: RoundState | null;
   playerState: PlayerState | null;
