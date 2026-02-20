@@ -158,8 +158,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [userId]);
 
   useEffect(() => {
-    if (userId && connected) refreshPlayer();
-  }, [userId, connected, refreshPlayer]);
+    if (userId) refreshPlayer();
+  }, [userId, refreshPlayer]);
 
   useEffect(() => {
     const unsubs = [
