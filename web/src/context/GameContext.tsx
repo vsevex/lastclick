@@ -105,22 +105,34 @@ function reducer(state: GameState, action: Action): GameState {
     case "SET_ROOMS":
       return { ...state, rooms: action.rooms };
 
-    case "ROOM_STATE":
+    case "ROOM_STATE": {
+      const sameRoom = state.currentRoom?.room_id === action.payload.room_id;
+      const prevState = state.currentRoom?.state;
+      const isWaiting = action.payload.state === "waiting";
+      const isCountdown = action.payload.state === "active";
+      const chartReset = sameRoom && isCountdown && prevState === "waiting";
+      let marginHistory: number[];
+      if (chartReset) {
+        marginHistory = [action.payload.margin_ratio];
+      } else if (sameRoom && isWaiting) {
+        const next = [...state.marginHistory, action.payload.margin_ratio];
+        if (next.length > 120) next.shift();
+        marginHistory = next;
+      } else if (sameRoom) {
+        marginHistory = state.marginHistory;
+      } else {
+        marginHistory = [action.payload.margin_ratio];
+      }
       return {
         ...state,
         currentRoom: action.payload,
         isInRoom: true,
         selfEliminated: false,
         forfeited: false,
-        marginHistory:
-          state.currentRoom?.room_id === action.payload.room_id
-            ? state.marginHistory
-            : [action.payload.margin_ratio],
-        eliminated:
-          state.currentRoom?.room_id === action.payload.room_id
-            ? state.eliminated
-            : [],
+        marginHistory,
+        eliminated: sameRoom ? state.eliminated : [],
       };
+    }
 
     case "TICK": {
       if (!state.currentRoom) return state;
