@@ -12,16 +12,16 @@ Build locally on Windows, upload artifacts, run natively on the server. No Docke
 $env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
 ```
 
-### Frontend (Next.js standalone)
+### Frontend (Vite SPA)
 
 ```powershell
 cd web
-$env:NEXT_PUBLIC_WS_URL="wss://lastclick.vsevex.me"
+$env:VITE_WS_URL="wss://lastclick.vsevex.me"
 npm run build
 cd ..
 ```
 
-This produces `web/.next/standalone/` and `web/.next/static/`.
+This produces `web/dist/` with static files (HTML, JS, CSS).
 
 ### Install goose locally (one-time)
 
@@ -38,8 +38,7 @@ $env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/goose g
 scp bin/lastclick root@<server-ip>:/opt/lastclick/
 scp bin/goose root@<server-ip>:/opt/lastclick/
 scp -r migrations root@<server-ip>:/opt/lastclick/
-scp -r web/.next/standalone/* root@<server-ip>:/opt/lastclick/web/
-scp -r web/.next/static root@<server-ip>:/opt/lastclick/web/.next/static
+scp -r web/dist/* root@<server-ip>:/opt/lastclick/web/dist/
 scp nginx/default.conf root@<server-ip>:/etc/nginx/conf.d/lastclick.conf
 ```
 
@@ -51,9 +50,9 @@ Directory layout on server:
 ├── goose                  # migration tool
 ├── migrations/            # SQL files
 └── web/
-    ├── server.js          # Next.js standalone entry
-    ├── .next/static/      # static assets
-    └── ...                # rest of standalone output
+    └── dist/              # Vite build output (static SPA)
+        ├── index.html
+        └── assets/
 ```
 
 ---
@@ -127,35 +126,13 @@ WantedBy=multi-user.target
 EOF
 ```
 
-### Frontend
-
-```bash
-cat > /etc/systemd/system/lastclick-web.service << 'EOF'
-[Unit]
-Description=LastClick Frontend
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/lastclick/web
-Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=HOSTNAME=127.0.0.1
-Environment=BACKEND_URL=http://127.0.0.1:8080
-ExecStart=/usr/bin/node server.js
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
 ### Enable and start
+
+The frontend is a static SPA served by nginx — no systemd service needed.
 
 ```bash
 systemctl daemon-reload
-systemctl enable --now lastclick lastclick-web
+systemctl enable --now lastclick
 ```
 
 ---
@@ -173,17 +150,12 @@ Certbot auto-configures nginx SSL and sets up renewal.
 
 ## 7. Nginx Config
 
-Replace `/etc/nginx/conf.d/lastclick.conf`:
+Replace `/etc/nginx/conf.d/lastclick.conf` (or copy `nginx/default.conf` from the repo):
 
 ```nginx
 upstream backend {
     server 127.0.0.1:8080;
     keepalive 32;
-}
-
-upstream frontend {
-    server 127.0.0.1:3000;
-    keepalive 16;
 }
 
 map $http_upgrade $connection_upgrade {
@@ -253,19 +225,19 @@ server {
     }
 
     location /metrics {
-        allow 127.0.0.1;
-        deny all;
         proxy_pass http://backend;
     }
 
+    location /assets/ {
+        root /opt/lastclick/web/dist;
+        expires 365d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
     location / {
-        proxy_pass http://frontend;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        root /opt/lastclick/web/dist;
+        try_files $uri $uri/ /index.html;
     }
 }
 ```
@@ -291,15 +263,14 @@ Run locally after code changes:
 ```powershell
 # Build
 $env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o bin/lastclick ./cmd/server
-cd web; $env:NEXT_PUBLIC_WS_URL="wss://lastclick.vsevex.me"; npm run build; cd ..
+cd web; $env:VITE_WS_URL="wss://lastclick.vsevex.me"; npm run build; cd ..
 
 # Upload
 scp bin/lastclick root@<server-ip>:/opt/lastclick/
-scp -r web/.next/standalone/* root@<server-ip>:/opt/lastclick/web/
-scp -r web/.next/static root@<server-ip>:/opt/lastclick/web/.next/static
+scp -r web/dist/* root@<server-ip>:/opt/lastclick/web/dist/
 
-# Restart on server
-ssh root@<server-ip> "systemctl restart lastclick lastclick-web"
+# Restart backend + reload nginx
+ssh root@<server-ip> "systemctl restart lastclick && nginx -t && systemctl reload nginx"
 ```
 
 ---
@@ -309,10 +280,9 @@ ssh root@<server-ip> "systemctl restart lastclick lastclick-web"
 ```bash
 # Logs
 journalctl -u lastclick -f
-journalctl -u lastclick-web -f
 
 # Status
-systemctl status lastclick lastclick-web
+systemctl status lastclick
 
 # Run migrations
 cd /opt/lastclick && ./goose -dir migrations postgres "$DATABASE_URL" up
