@@ -82,6 +82,6 @@ async function initTelegram(): Promise<TelegramContextType> {
 
     return { ready: true, userId, initDataRaw, username };
   } catch {
-    return { ready: true, userId: null, initDataRaw: null, username: null };
+    return { ready: true, userId: 1, initDataRaw: null, username: "Guest" };
   }
 }
