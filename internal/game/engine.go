@@ -187,12 +187,13 @@ func (e *Engine) runLoop(ctx context.Context, r *room.Room, rr *roomRunner) {
 			if r.State != room.StateSurvival {
 				continue
 			}
-			if !r.RecordPulse(pulse.PlayerID) {
+			ok, pulseAt := r.RecordPulse(pulse.PlayerID)
+			if !ok {
 				continue
 			}
 			ext := PulseExtension(r.Tier.BaseExtension, r.AliveCount())
 			r.GlobalTimer += ext
-			e.broadcastPulse(r, pulse.PlayerID, ext)
+			e.broadcastPulse(r, pulse.PlayerID, ext, pulseAt)
 		}
 	}
 }
@@ -345,11 +346,12 @@ func (e *Engine) broadcastElimination(r *room.Room, playerID int64) {
 	e.hub.BroadcastRoom(r.ID, server.WSMessage{Type: "elimination", Payload: payload})
 }
 
-func (e *Engine) broadcastPulse(r *room.Room, playerID int64, ext time.Duration) {
+func (e *Engine) broadcastPulse(r *room.Room, playerID int64, ext time.Duration, pulseAt time.Time) {
 	payload, _ := json.Marshal(map[string]any{
-		"player_id":    playerID,
-		"extension_ms": ext.Milliseconds(),
-		"timer_ms":     r.GlobalTimer.Milliseconds(),
+		"player_id":      playerID,
+		"extension_ms":   ext.Milliseconds(),
+		"timer_ms":       r.GlobalTimer.Milliseconds(),
+		"server_time_ms": pulseAt.UnixMilli(),
 	})
 	e.hub.BroadcastRoom(r.ID, server.WSMessage{Type: "pulse_ack", Payload: payload})
 }
