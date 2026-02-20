@@ -5,6 +5,7 @@ import { LeaderboardPanel } from "@/components/game/LeaderboardPanel";
 import { WhalePositionCard } from "@/components/game/WhalePositionCard";
 import { SquadInfo } from "@/components/game/SquadInfo";
 import { GameHeader } from "@/components/game/GameHeader";
+import { SimulationPanel } from "@/components/game/SimulationPanel";
 import { useGame } from "@/context/GameContext";
 import { Button } from "@/components/ui/button";
 
@@ -15,7 +16,7 @@ const PriceChart = lazy(() =>
 );
 
 export default function Game() {
-  const { state, clearRoom } = useGame();
+  const { state, clearRoom, engine } = useGame();
   const room = state.currentRoom;
   const gameActive = room && room.state !== "finished";
 
@@ -29,6 +30,7 @@ export default function Game() {
   }, [gameActive]);
 
   if (state.forfeited) {
+    const shardInfo = engine?.shardCredit;
     return (
       <main className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="text-center space-y-4 max-w-sm">
@@ -41,17 +43,24 @@ export default function Game() {
           <p className="text-muted-foreground">
             You left the room. Entry fee is lost.
           </p>
+          {shardInfo != null && shardInfo > 0 && (
+            <p className="text-sm text-accent font-semibold">
+              +{shardInfo} Shards earned
+            </p>
+          )}
           <Link to="/rooms" onClick={clearRoom}>
             <Button className="bg-primary hover:bg-primary/90 min-h-[44px]">
               Back to Rooms
             </Button>
           </Link>
         </div>
+        <SimulationPanel />
       </main>
     );
   }
 
   if (state.selfEliminated && room) {
+    const shardInfo = engine?.shardCredit;
     return (
       <main className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="text-center space-y-4 max-w-sm">
@@ -70,12 +79,18 @@ export default function Game() {
             </span>
             <span>Pool: {room.pool}&#9733;</span>
           </div>
+          {shardInfo != null && shardInfo > 0 && (
+            <p className="text-sm text-accent font-semibold">
+              +{shardInfo} Shards earned
+            </p>
+          )}
           <Link to="/rooms" onClick={clearRoom}>
             <Button className="bg-primary hover:bg-primary/90 min-h-[44px]">
               Back to Rooms
             </Button>
           </Link>
         </div>
+        <SimulationPanel />
       </main>
     );
   }
@@ -94,11 +109,13 @@ export default function Game() {
             </Button>
           </Link>
         </div>
+        <SimulationPanel />
       </main>
     );
   }
 
   const isInDanger = room.margin_ratio >= 0.8;
+  const payoutInfo = engine?.payoutInfo;
 
   return (
     <main className="min-h-screen bg-background">
@@ -124,7 +141,16 @@ export default function Game() {
                 <h3 className="text-xl font-bold text-foreground">
                   Game Finished
                 </h3>
-                {room.winner_id ? (
+                {payoutInfo ? (
+                  <div className="space-y-2">
+                    <p className="text-lg font-bold text-green-400">
+                      #{payoutInfo.rank} Place
+                    </p>
+                    <p className="text-2xl font-bold text-primary font-mono">
+                      +{payoutInfo.amount} &#9733;
+                    </p>
+                  </div>
+                ) : room.winner_id ? (
                   <p className="text-muted-foreground">
                     Winner:{" "}
                     <span className="font-mono text-primary font-bold">
@@ -137,6 +163,11 @@ export default function Game() {
                 <p className="text-sm text-muted-foreground">
                   Pool: {room.pool} Stars
                 </p>
+                {engine?.shardCredit != null && engine.shardCredit > 0 && (
+                  <p className="text-sm text-accent font-semibold">
+                    +{engine.shardCredit} Shards earned
+                  </p>
+                )}
                 <Link to="/rooms" onClick={clearRoom}>
                   <Button className="bg-primary hover:bg-primary/90 min-h-[44px]">
                     Play Again
@@ -154,6 +185,7 @@ export default function Game() {
       </div>
 
       <SurvivalPhase />
+      <SimulationPanel />
     </main>
   );
 }
