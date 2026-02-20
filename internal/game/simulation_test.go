@@ -9,7 +9,7 @@ import (
 	"github.com/lastclick/lastclick/internal/room"
 )
 
-var t1 = room.Tiers[1] // 5★, 3-20 players, 5s pulse window, 3s base ext, 120s survival
+var t1 = room.Tiers[1] // 5★, 3-20 players, 5s pulse window, 3s base ext, 90s survival
 
 // helper: every player pulses at these ticks
 func everyonePulses(players []int64, ticks ...int) map[int][]int64 {
