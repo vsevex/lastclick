@@ -2,11 +2,44 @@ import { useGame } from "@/context/GameContext";
 import { useTelegram } from "@/context/TelegramProvider";
 import { TIERS } from "@/types/game";
 import { Button } from "@/components/ui/button";
+import { useState, useEffect, useRef } from "react";
+
+/** Cooldown after accepted pulse (matches server rate limit). No client authority. */
+const PULSE_COOLDOWN_MS = 500;
+/** How long to show "Pulsed!" after ack. */
+const PULSE_CONFIRM_DURATION_MS = 1200;
 
 export function SurvivalPhase() {
   const { state, pulse } = useGame();
   const { userId } = useTelegram();
   const room = state.currentRoom;
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [confirmUntil, setConfirmUntil] = useState(0);
+  const lastHandledAckRef = useRef<string | null>(null);
+
+  const ack = state.lastPulseAck;
+  const isMyAck = ack && userId != null && ack.player_id === userId;
+  const ackKey = ack
+    ? `${ack.player_id}-${ack.server_time_ms ?? ack.timer_ms}`
+    : null;
+
+  useEffect(() => {
+    if (!isMyAck || !ackKey) return;
+    if (lastHandledAckRef.current === ackKey) return;
+    lastHandledAckRef.current = ackKey;
+    const now = Date.now();
+    setCooldownUntil(now + PULSE_COOLDOWN_MS);
+    setConfirmUntil(now + PULSE_CONFIRM_DURATION_MS);
+    try {
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+    } catch {
+      if (navigator.vibrate) navigator.vibrate(10);
+    }
+  }, [isMyAck, ackKey]);
+
+  const now = Date.now();
+  const onCooldown = now < cooldownUntil;
+  const showConfirmed = now < confirmUntil && isMyAck;
 
   if (!room || room.state !== "survival") return null;
 
@@ -16,6 +49,11 @@ export function SurvivalPhase() {
   const tier = TIERS[room.tier];
   const timerSec = Math.max(0, Math.ceil(room.timer_ms / 1000));
   const isUrgent = timerSec <= 5;
+
+  const handlePulse = () => {
+    if (onCooldown) return;
+    pulse();
+  };
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center px-4">
@@ -41,11 +79,18 @@ export function SurvivalPhase() {
         </div>
 
         <Button
-          onClick={pulse}
+          onClick={handlePulse}
+          disabled={onCooldown}
           size="lg"
-          className="w-full max-w-xs mx-auto py-6 text-lg font-bold min-h-[56px] bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/50 active:scale-95 transition-all duration-200"
+          className={`w-full max-w-xs mx-auto py-6 text-lg font-bold min-h-[56px] transition-all duration-200 ${
+            showConfirmed
+              ? "bg-green-600 hover:bg-green-600 text-white"
+              : onCooldown
+                ? "opacity-70 cursor-not-allowed bg-primary/80"
+                : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/50 active:scale-95"
+          }`}
         >
-          PULSE NOW
+          {showConfirmed ? "Pulsed!" : onCooldown ? "..." : "PULSE NOW"}
         </Button>
 
         <p className="text-xs text-muted-foreground">
