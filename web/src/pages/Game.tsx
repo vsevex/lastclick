@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import { SurvivalPhase } from "@/components/game/SurvivalPhase";
+import { CountdownOverlay } from "@/components/game/CountdownOverlay";
 import { LeaderboardPanel } from "@/components/game/LeaderboardPanel";
 import { WhalePositionCard } from "@/components/game/WhalePositionCard";
 import { SquadInfo } from "@/components/game/SquadInfo";
@@ -124,9 +125,16 @@ export default function Game() {
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
         <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 sm:gap-6">
           <div className="lg:col-span-2 space-y-4 sm:space-y-6 order-1 lg:order-2">
-            <div className="h-64 sm:h-80">
+            <div
+              className={`h-64 sm:h-80 transition-colors duration-300 ${
+                room.state === "active"
+                  ? "rounded-lg border border-primary/20 bg-primary/5"
+                  : ""
+              }`}
+            >
               <Suspense>
                 <PriceChart
+                  key={`${room.room_id}-${room.state === "waiting" ? "waiting" : "round"}`}
                   marginHistory={state.marginHistory}
                   volatilityMul={room.volatility_mul}
                   marginRatio={room.margin_ratio}
@@ -199,6 +207,7 @@ export default function Game() {
         </div>
       </div>
 
+      <CountdownOverlay />
       <SurvivalPhase />
       <SimulationPanel />
     </main>
