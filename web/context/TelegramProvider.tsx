@@ -63,7 +63,7 @@ async function initTelegram(): Promise<TelegramContextType> {
     const username: string | null = user?.username ?? user?.firstName ?? null;
 
     try {
-      sdk.miniApp.mount();
+      await sdk.miniApp.mount();
       sdk.miniApp.setHeaderColor("#0B0F14");
       sdk.miniApp.setBackgroundColor("#0B0F14");
     } catch (e) {
