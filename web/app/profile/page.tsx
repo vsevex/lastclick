@@ -11,10 +11,14 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 export default function ProfilePage() {
-  const { state } = useGame();
+  const { state, refreshPlayer } = useGame();
   const { userId } = useTelegram();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myRank, setMyRank] = useState<LeaderboardEntry | null>(null);
+
+  useEffect(() => {
+    if (userId && !state.player) refreshPlayer();
+  }, [userId, state.player, refreshPlayer]);
 
   useEffect(() => {
     getLeaderboardPlayers(10)
