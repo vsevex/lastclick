@@ -23,12 +23,18 @@ export function RoomCard({ room }: { room: RoomInfo }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-bold uppercase text-muted-foreground">
-              {room.type}
+              {room.tier === 0 ? "Tutorial" : room.type}
             </span>
-            <span className="text-xs font-bold text-accent">T{room.tier}</span>
+            {room.tier > 0 && (
+              <span className="text-xs font-bold text-accent">
+                T{room.tier}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground truncate">
-            {room.id.slice(0, 8)}...
+            {room.tier === 0
+              ? "60–90s demo · 0 entry · learn by playing"
+              : `${room.id.slice(0, 8)}...`}
           </p>
         </div>
         <div
@@ -85,7 +91,7 @@ export function RoomCard({ room }: { room: RoomInfo }) {
             className="w-full bg-primary/80 hover:bg-primary text-primary-foreground font-semibold min-h-[44px] transition-all duration-300 group-hover:shadow-lg group-hover:shadow-primary/20"
             size="sm"
           >
-            Join Room
+            {room.tier === 0 ? "Play demo" : "Join Room"}
           </Button>
         </Link>
       ) : (
