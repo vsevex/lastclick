@@ -22,6 +22,7 @@ import type {
   PulseAckPayload,
   PlayerProfile,
 } from "@/types/game";
+import type { RoundResultPayload } from "@/context/GameContext";
 
 interface EngineState {
   player: PlayerProfile | null;
@@ -36,6 +37,7 @@ interface EngineState {
   isInRoom: boolean;
   selfEliminated: boolean;
   forfeited: boolean;
+  roundResult: RoundResultPayload | null;
   engineRoom: EngineRoom | null;
   roundState: RoundState | null;
   playerState: PlayerState | null;
@@ -56,6 +58,7 @@ const initialState: EngineState = {
   isInRoom: false,
   selfEliminated: false,
   forfeited: false,
+  roundResult: null,
   engineRoom: null,
   roundState: null,
   playerState: null,
@@ -119,6 +122,8 @@ function reducer(state: EngineState, action: Action): EngineState {
         forfeited: false,
         marginHistory,
         eliminated: sameRoom ? state.eliminated : [],
+        roundResult:
+          action.payload.state === "finished" ? state.roundResult : null,
       };
     }
 
@@ -175,6 +180,7 @@ function reducer(state: EngineState, action: Action): EngineState {
         lastPulseAck: null,
         selfEliminated: false,
         forfeited: false,
+        roundResult: null,
         engineRoom: null,
         roundState: null,
         playerState: null,
