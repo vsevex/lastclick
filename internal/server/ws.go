@@ -32,13 +32,14 @@ type Client struct {
 
 // Hub manages all WebSocket clients and room-level broadcasting.
 type Hub struct {
-	mu       sync.RWMutex
-	clients  map[int64]*Client
-	rooms    map[string]map[int64]*Client
-	handler  MessageHandler
-	botToken string
-	devMode  bool
-	logger   *slog.Logger
+	mu               sync.RWMutex
+	clients          map[int64]*Client
+	rooms            map[string]map[int64]*Client
+	lastRoomByPlayer map[int64]string // so reconnect (sync) can restore room; set on unregister
+	handler          MessageHandler
+	botToken         string
+	devMode          bool
+	logger           *slog.Logger
 }
 
 // MessageHandler processes inbound messages from a client.
@@ -48,12 +49,13 @@ type MessageHandler interface {
 
 func NewHub(botToken string, devMode bool, handler MessageHandler, logger *slog.Logger) *Hub {
 	return &Hub{
-		clients:  make(map[int64]*Client),
-		rooms:    make(map[string]map[int64]*Client),
-		handler:  handler,
-		botToken: botToken,
-		devMode:  devMode,
-		logger:   logger,
+		clients:          make(map[int64]*Client),
+		rooms:            make(map[string]map[int64]*Client),
+		lastRoomByPlayer: make(map[int64]string),
+		handler:          handler,
+		botToken:         botToken,
+		devMode:          devMode,
+		logger:           logger,
 	}
 }
 
@@ -122,17 +124,25 @@ func (h *Hub) register(c *Client) {
 
 func (h *Hub) unregister(c *Client) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if _, ok := h.clients[c.ID]; ok {
 		delete(h.clients, c.ID)
 		close(c.send)
 	}
 	if c.RoomID != "" {
+		h.lastRoomByPlayer[c.ID] = c.RoomID
 		if room, ok := h.rooms[c.RoomID]; ok {
 			delete(room, c.ID)
 			if len(room) == 0 {
 				delete(h.rooms, c.RoomID)
 			}
+		}
+	}
+	handler := h.handler
+	h.mu.Unlock()
+	// Disconnect is not exit: temporary state. Engine marks player disconnected; reconnect may restore or eliminate.
+	if handler != nil && c.RoomID != "" {
+		if d, ok := handler.(interface{ OnDisconnect(client *Client) }); ok {
+			d.OnDisconnect(c)
 		}
 	}
 }
@@ -155,6 +165,40 @@ func (h *Hub) JoinRoom(clientID int64, roomID string) {
 		h.rooms[roomID] = make(map[int64]*Client)
 	}
 	h.rooms[roomID][c.ID] = c
+}
+
+// LeaveRoomAll removes every client from a room (e.g. after round reset so they can re-enter).
+func (h *Hub) LeaveRoomAll(roomID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	room, ok := h.rooms[roomID]
+	if !ok {
+		return
+	}
+	for _, c := range room {
+		c.RoomID = ""
+	}
+	delete(h.rooms, roomID)
+}
+
+// LeaveRoom removes a client from a room (e.g. voluntary leave during waiting/countdown).
+func (h *Hub) LeaveRoom(clientID int64, roomID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	c, ok := h.clients[clientID]
+	if !ok {
+		return
+	}
+	if c.RoomID != roomID {
+		return
+	}
+	c.RoomID = ""
+	if room, ok := h.rooms[roomID]; ok {
+		delete(room, clientID)
+		if len(room) == 0 {
+			delete(h.rooms, roomID)
+		}
+	}
 }
 
 // BroadcastRoom sends a message to every client in a room.
@@ -194,6 +238,13 @@ func (h *Hub) GetClient(clientID int64) (*Client, bool) {
 	defer h.mu.RUnlock()
 	c, ok := h.clients[clientID]
 	return c, ok
+}
+
+// GetLastRoom returns the room ID the player was in when they disconnected (for reconnect/sync). Empty if never in a room.
+func (h *Hub) GetLastRoom(playerID int64) string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.lastRoomByPlayer[playerID]
 }
 
 func (h *Hub) readPump(ctx context.Context, c *Client) {
