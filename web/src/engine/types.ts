@@ -30,6 +30,8 @@ export interface EnginePlayer {
   payout: number;
   isBot: boolean;
   botSkill?: number;
+  /** True if player left voluntarily during survival (forfeit). Still ELIMINATED for ranking; no re-entry same round. */
+  voluntaryExit?: boolean;
 }
 
 export interface EngineRoom {
