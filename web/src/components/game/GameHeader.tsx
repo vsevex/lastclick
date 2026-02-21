@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TIERS } from "@/types/game";
 
 export function GameHeader() {
-  const { state, forfeit } = useGame();
+  const { state, forfeit, clearRoom, engine } = useGame();
   const navigate = useNavigate();
   const room = state.currentRoom;
   if (!room) return null;
@@ -15,9 +15,12 @@ export function GameHeader() {
   const min = Math.floor(timerSec / 60);
   const sec = timerSec % 60;
   const isSurvival = room.state === "survival";
+  const isSpectator =
+    state.selfEliminated && engine?.voluntaryExit && room.state === "survival";
 
   const handleExit = useCallback(() => {
-    if (room.state === "finished") {
+    if (room.state === "finished" || isSpectator) {
+      clearRoom();
       navigate("/rooms");
       return;
     }
@@ -29,7 +32,7 @@ export function GameHeader() {
     if (window.confirm(msg)) {
       forfeit();
     }
-  }, [forfeit, navigate, room.state, isSurvival]);
+  }, [forfeit, clearRoom, navigate, room.state, isSurvival, isSpectator]);
 
   return (
     <div className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-sm safe-top">
@@ -65,12 +68,14 @@ export function GameHeader() {
             size="sm"
             onClick={handleExit}
             className={`min-h-[40px] ${
-              isSurvival
-                ? "text-destructive hover:text-destructive hover:bg-destructive/10"
-                : "text-muted-foreground hover:text-foreground"
+              isSpectator
+                ? "text-muted-foreground hover:text-foreground"
+                : isSurvival
+                  ? "text-destructive hover:text-destructive hover:bg-destructive/10"
+                  : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            {isSurvival ? "Forfeit" : "Exit"}
+            {isSpectator ? "Back to rooms" : isSurvival ? "Forfeit" : "Exit"}
           </Button>
         </div>
       </div>
