@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -53,8 +54,8 @@ func main() {
 	// Room manager
 	rooms := room.NewManager()
 
-	// End-of-round callback
-	onEnd := func(r *room.Room) {
+	// End-of-round callback: payouts, shards, then send round_result to each player for results screen.
+	onEnd := func(r *room.Room, hub *server.Hub) {
 		endCtx, endCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer endCancel()
 
@@ -78,6 +79,7 @@ func main() {
 			}
 		}
 
+		shardMap := make(map[int64]int64)
 		for _, p := range r.Players {
 			place := placementMap[p.ID]
 			if place > 0 && place <= topPlaces {
@@ -88,6 +90,7 @@ func main() {
 				_ = playerStore.UpdateBalance(endCtx, p.ID, 0, shards)
 				roomID := r.ID
 				_ = txStore.Record(endCtx, p.ID, store.TxShardGrant, shards, &roomID)
+				shardMap[p.ID] = shards
 			}
 		}
 
@@ -100,6 +103,19 @@ func main() {
 				}
 				share := warChest / int64(r.PlayerCount())
 				_ = squadStore.AddToWarChest(endCtx, *player.SquadID, share)
+			}
+		}
+
+		// Send round_result to each player for results screen (placement, shards, re-enter).
+		if hub != nil {
+			for _, p := range r.Players {
+				place := placementMap[p.ID]
+				shards := shardMap[p.ID]
+				payload, _ := json.Marshal(map[string]any{
+					"placement": place,
+					"shards":    shards,
+				})
+				hub.SendTo(p.ID, server.WSMessage{Type: "round_result", Payload: payload})
 			}
 		}
 
