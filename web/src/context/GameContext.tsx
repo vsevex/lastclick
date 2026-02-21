@@ -24,6 +24,11 @@ import type {
   PlayerState,
 } from "@/engine/types";
 
+export interface RoundResultPayload {
+  placement: number;
+  shards: number;
+}
+
 interface GameState {
   player: PlayerProfile | null;
   playerLoading: boolean;
@@ -37,6 +42,8 @@ interface GameState {
   isInRoom: boolean;
   selfEliminated: boolean;
   forfeited: boolean;
+  /** Set when round finishes; used for results screen (placement, shards). Cleared on CLEAR_ROOM or when room leaves finished. */
+  roundResult: RoundResultPayload | null;
 }
 
 const initialState: GameState = {
@@ -52,6 +59,7 @@ const initialState: GameState = {
   isInRoom: false,
   selfEliminated: false,
   forfeited: false,
+  roundResult: null,
 };
 
 type Action =
@@ -64,6 +72,7 @@ type Action =
   | { type: "TICK"; payload: TickPayload }
   | { type: "ELIMINATION"; payload: EliminationPayload }
   | { type: "PULSE_ACK"; payload: PulseAckPayload }
+  | { type: "ROUND_RESULT"; payload: RoundResultPayload }
   | { type: "FORFEIT" }
   | { type: "CLEAR_ROOM" };
 
@@ -105,6 +114,9 @@ function reducer(state: GameState, action: Action): GameState {
     case "SET_ROOMS":
       return { ...state, rooms: action.rooms };
 
+    case "ROUND_RESULT":
+      return { ...state, roundResult: action.payload };
+
     case "ROOM_STATE": {
       const sameRoom = state.currentRoom?.room_id === action.payload.room_id;
       const prevState = state.currentRoom?.state;
@@ -131,6 +143,8 @@ function reducer(state: GameState, action: Action): GameState {
         forfeited: false,
         marginHistory,
         eliminated: sameRoom ? state.eliminated : [],
+        roundResult:
+          action.payload.state === "finished" ? state.roundResult : null,
       };
     }
 
@@ -185,6 +199,7 @@ function reducer(state: GameState, action: Action): GameState {
         ...state,
         currentRoom: null,
         isInRoom: false,
+        roundResult: null,
         marginHistory: [],
         eliminated: [],
         lastPulseAck: null,
@@ -206,6 +221,8 @@ export interface EngineExtras {
   engineRoom: EngineRoom | null;
   roundState: RoundState | null;
   playerState: PlayerState | null;
+  /** True if local player forfeited during survival (spectator; no same-round re-entry). */
+  voluntaryExit: boolean;
   payoutInfo: { amount: number; rank: number } | null;
   shardCredit: number | null;
   simulateDisconnect: () => void;
@@ -275,6 +292,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }),
       on("pulse_ack", (payload) => {
         dispatch({ type: "PULSE_ACK", payload: payload as PulseAckPayload });
+      }),
+      on("round_result", (payload) => {
+        dispatch({
+          type: "ROUND_RESULT",
+          payload: payload as RoundResultPayload,
+        });
       }),
     ];
     return () => unsubs.forEach((fn) => fn());
