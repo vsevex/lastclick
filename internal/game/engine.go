@@ -35,7 +35,7 @@ type Engine struct {
 	pulseLimiter *PulseRateLimiter
 }
 
-type EndCallback func(r *room.Room)
+type EndCallback func(r *room.Room, hub *server.Hub)
 
 func NewEngine(rooms *room.Manager, hub *server.Hub, logger *slog.Logger, onEnd EndCallback) *Engine {
 	return &Engine{
@@ -198,6 +198,9 @@ func (e *Engine) runLoop(ctx context.Context, r *room.Room, rr *roomRunner) {
 	}
 }
 
+// NextRoundDelay is how long after round end before room resets; players can re-enter then.
+const NextRoundDelay = 12 * time.Second
+
 func (e *Engine) finishRoom(r *room.Room) {
 	r.State = room.StateFinished
 	now := time.Now()
@@ -211,12 +214,15 @@ func (e *Engine) finishRoom(r *room.Room) {
 	e.broadcastState(r)
 
 	if e.onEnd != nil {
-		e.onEnd(r)
+		e.onEnd(r, e.hub)
 	}
 
 	go func() {
-		time.Sleep(30 * time.Second)
-		e.rooms.Remove(r.ID)
+		time.Sleep(NextRoundDelay)
+		e.hub.LeaveRoomAll(r.ID)
+		if r.ResetRound() {
+			e.broadcastState(r)
+		}
 		e.EnsureRooms()
 	}()
 }
@@ -252,9 +258,75 @@ func (e *Engine) EnsureRooms() {
 	}
 }
 
+// OnDisconnect is called by Hub when a client disconnects. Disconnect is not exit: mark player temporarily disconnected; pulse window still applies.
+func (e *Engine) OnDisconnect(client *server.Client) {
+	if client.RoomID == "" {
+		return
+	}
+	r, ok := e.rooms.Get(client.RoomID)
+	if !ok {
+		return
+	}
+	if r.State == room.StateSurvival || r.State == room.StateActive {
+		r.MarkDisconnected(client.ID)
+		e.broadcastState(r)
+	}
+}
+
 // HandleMessage implements server.MessageHandler.
 func (e *Engine) HandleMessage(ctx context.Context, client *server.Client, msg server.WSMessage) {
 	switch msg.Type {
+	case "sync":
+		// Reconnect: restore if before pulse window expired, else eliminate. No mercy, server-authoritative.
+		roomID := e.hub.GetLastRoom(client.ID)
+		if roomID == "" {
+			return
+		}
+		r, ok := e.rooms.Get(roomID)
+		if !ok {
+			return
+		}
+		restore, eliminate := r.ReconnectCheck(client.ID)
+		if eliminate {
+			r.Eliminate(client.ID)
+			e.broadcastElimination(r, client.ID)
+		}
+		if restore {
+			r.ClearDisconnected(client.ID)
+		}
+		if restore || eliminate {
+			e.hub.JoinRoom(client.ID, roomID)
+			e.broadcastState(r)
+		}
+
+	case "forfeit":
+		// Voluntary exit. Not disconnect.
+		if client.RoomID == "" {
+			return
+		}
+		r, ok := e.rooms.Get(client.RoomID)
+		if !ok {
+			return
+		}
+		switch r.State {
+		case room.StateWaiting:
+			// Refund during WAITING. Remove from list.
+			if r.RemovePlayer(client.ID, true) {
+				e.hub.LeaveRoom(client.ID, client.RoomID)
+				e.broadcastState(r)
+			}
+		case room.StateActive:
+			// No refund once countdown started (prevents volatility scouting).
+			if r.RemovePlayer(client.ID, false) {
+				e.hub.LeaveRoom(client.ID, client.RoomID)
+				e.broadcastState(r)
+			}
+		case room.StateSurvival:
+			r.Eliminate(client.ID)
+			e.broadcastElimination(r, client.ID)
+			e.broadcastState(r)
+		}
+
 	case "join_room":
 		var payload struct {
 			RoomID string `json:"room_id"`
