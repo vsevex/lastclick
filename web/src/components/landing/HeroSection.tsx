@@ -1,6 +1,7 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useSocket } from "@/context/SocketContext";
+import { useGame } from "@/context/GameContext";
 import { Button } from "@/components/ui/button";
 
 interface LiveMetrics {
@@ -12,7 +13,22 @@ interface LiveMetrics {
 
 export function HeroSection() {
   const { connected } = useSocket();
+  const { state, joinRoom, listRooms } = useGame();
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState<LiveMetrics | null>(null);
+
+  const tutorialRoom = state.rooms.find(
+    (r) => r.tier === 0 && r.state === "waiting",
+  );
+  const enterDemo = () => {
+    listRooms();
+    if (tutorialRoom) {
+      joinRoom(tutorialRoom.id);
+      navigate("/game");
+    } else {
+      navigate("/rooms");
+    }
+  };
 
   useEffect(() => {
     const fetchMetrics = () =>
@@ -55,6 +71,16 @@ export function HeroSection() {
               {connected ? "Enter The Game" : "Connecting..."}
             </Button>
           </Link>
+          {tutorialRoom && (
+            <Button
+              size="lg"
+              variant="outline"
+              className="w-full sm:w-auto border-primary/50 text-primary hover:bg-primary/10 min-h-[48px]"
+              onClick={enterDemo}
+            >
+              Try 60s demo
+            </Button>
+          )}
           <Link to="/profile" className="w-full sm:w-auto">
             <Button
               size="lg"
