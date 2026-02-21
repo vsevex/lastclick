@@ -67,6 +67,25 @@ func (r *Room) AddPlayer(id int64, username string) bool {
 	return true
 }
 
+// RemovePlayer removes a player from the room. Refund=true deducts entry from pool (use when leaving during WAITING).
+// No refund once countdown started (volatility scouting prevention). Returns true if player was in room.
+func (r *Room) RemovePlayer(id int64, refund bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.Players[id]
+	if !ok {
+		return false
+	}
+	delete(r.Players, id)
+	if refund {
+		cost := r.Tier.EntryCost
+		if r.Pool >= cost {
+			r.Pool -= cost
+		}
+	}
+	return true
+}
+
 func (r *Room) AliveCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -99,6 +118,46 @@ func (r *Room) Eliminate(id int64) {
 		now := time.Now()
 		p.EliminatedAt = &now
 		r.EliminationOrder = append(r.EliminationOrder, id)
+	}
+}
+
+// MarkDisconnected marks a player as temporarily disconnected (app closed / connection lost). Not exit; pulse window still applies.
+func (r *Room) MarkDisconnected(id int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if p, ok := r.Players[id]; ok {
+		p.Disconnected = true
+	}
+}
+
+// ClearDisconnected clears the disconnected flag (player reconnected). Call only when player is still alive.
+func (r *Room) ClearDisconnected(id int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if p, ok := r.Players[id]; ok {
+		p.Disconnected = false
+	}
+}
+
+// ReconnectCheck decides restore vs eliminate for a reconnecting player. Server-authoritative; no mercy.
+// restore=true: clear disconnected and keep in game. eliminate=true: eliminate now (missed pulse window).
+func (r *Room) ReconnectCheck(id int64) (restore bool, eliminate bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.Players[id]
+	if !ok || !p.Disconnected || !p.Alive {
+		return false, false
+	}
+	switch r.State {
+	case StateWaiting, StateActive:
+		return true, false
+	case StateSurvival:
+		if time.Since(p.LastPulseAt) > r.Tier.PulseWindow {
+			return false, true
+		}
+		return true, false
+	default:
+		return false, false
 	}
 }
 
@@ -169,7 +228,7 @@ func (r *Room) CanStart() bool {
 }
 
 // ResetRound puts the room back to StateWaiting for the next round. Room is not destroyed.
-// Call after StateFinished (e.g. after liquidation or round end). Preserves room identity and players.
+// Clears all players so everyone must re-enter (and pay entry). Fast re-entry loop.
 func (r *Room) ResetRound() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -185,11 +244,6 @@ func (r *Room) ResetRound() bool {
 	r.GlobalTimer = r.Tier.SurvivalTime
 	r.MarginRatio = 0
 	r.VolatilityMul = 1.0
-	for _, p := range r.Players {
-		p.Alive = true
-		p.PulseCount = 0
-		p.StarsSpent = 0
-		p.EliminatedAt = nil
-	}
+	r.Players = make(map[int64]*PlayerState)
 	return true
 }
