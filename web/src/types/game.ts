@@ -77,8 +77,17 @@ export interface TierConfig {
   prestigeMult: number;
 }
 
-// Survival cap 90–110s: high energy, ~mean session, avoid endurance fatigue
+// Tier 0 = tutorial demo round: 0 entry, forgiving pulse, scripted outcome
 export const TIERS: Record<number, TierConfig> = {
+  0: {
+    tier: 0,
+    entryCost: 0,
+    minPlayers: 5,
+    maxPlayers: 5,
+    pulseWindowSec: 6,
+    survivalTimeSec: 75,
+    prestigeMult: 1.0,
+  },
   1: {
     tier: 1,
     entryCost: 5,
