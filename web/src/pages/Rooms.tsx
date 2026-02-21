@@ -4,19 +4,25 @@ import { NavBar } from "@/components/NavBar";
 import { useGame } from "@/context/GameContext";
 import { useSocket } from "@/context/SocketContext";
 
+const TUTORIAL_DONE_KEY = "lastclick_tutorial_done";
+
 export default function Rooms() {
   const { state, listRooms } = useGame();
   const { connected } = useSocket();
+  const tutorialDone =
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem(TUTORIAL_DONE_KEY) === "1";
 
   useEffect(() => {
-    if (connected) listRooms();
-    const id = setInterval(() => {
-      if (connected) listRooms();
-    }, 5000);
+    listRooms();
+    if (!connected) return;
+    const id = setInterval(listRooms, 5000);
     return () => clearInterval(id);
   }, [connected, listRooms]);
 
-  const waitingRooms = state.rooms.filter((r) => r.state === "waiting");
+  const waitingRooms = state.rooms
+    .filter((r) => r.state === "waiting")
+    .sort((a, b) => (a.tier === 0 ? -1 : b.tier === 0 ? 1 : 0));
   const activeRooms = state.rooms.filter(
     (r) => r.state === "active" || r.state === "survival",
   );
@@ -34,6 +40,11 @@ export default function Rooms() {
             Join a room to enter the survival phase. Higher tier = higher stakes
             and volatility.
           </p>
+          {!tutorialDone && waitingRooms.some((r) => r.tier === 0) && (
+            <p className="mt-3 text-sm text-primary font-medium">
+              New? Play the demo first — 60s, 0 entry, learn by doing.
+            </p>
+          )}
         </div>
 
         {waitingRooms.length > 0 && (
