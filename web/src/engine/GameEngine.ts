@@ -21,6 +21,11 @@ import { VolatilityModel } from "./VolatilityModel";
 /** Chart baseline when round is armed (COUNTDOWN → SURVIVAL). Not used for elimination. */
 const ROUND_BASELINE_MARGIN = 0.15;
 
+/** Tutorial room: scripted demo, 0 entry, guaranteed top-3. */
+const TUTORIAL_ROOM_ID = "tutorial";
+/** Scripted bot elimination times (ms from survival start). 3 bots out by 50s → 2 left → round over. */
+const TUTORIAL_ELIMINATION_SCHEDULE_MS = [18_000, 35_000, 50_000];
+
 type Listener = (data: unknown) => void;
 
 export class GameEngine {
@@ -42,6 +47,8 @@ export class GameEngine {
   private botTimers: number[] = [];
   private lastTickTime = 0;
   private roundCompleteResetTimeouts = new Map<string, number>();
+  /** Tutorial: which scripted elimination step we're at (0, 1, 2). */
+  private tutorialEliminationStep = new Map<string, number>();
 
   constructor(
     localPlayerId: number,
@@ -84,6 +91,12 @@ export class GameEngine {
     return this.playerRoomMap.get(this.localPlayerId) ?? null;
   }
 
+  /** Round state of the room the local player is in. Used to decide spectator vs forfeit screen. */
+  getLocalRoundState(): RoundState | null {
+    const rid = this.playerRoomMap.get(this.localPlayerId);
+    return rid ? (this.rooms.get(rid)?.roundState ?? null) : null;
+  }
+
   /** Reset round and transition to WAITING (next round). Room persists; keeps players together. */
   resetRound(roomId: string) {
     const room = this.rooms.get(roomId);
@@ -98,9 +111,13 @@ export class GameEngine {
     // Only reset from ROUND_COMPLETE (or LIQUIDATED already transitioned there)
     if (room.roundState !== RoundState.ROUND_COMPLETE) return;
 
-    // Remove players who left the room; they don't stay for next round
+    // Remove players who left or were eliminated; they must re-join next round (no same-round re-entry).
     for (const [id, p] of [...room.players.entries()]) {
-      if (p.state === PlayerState.LEFT) {
+      if (
+        p.state === PlayerState.LEFT ||
+        p.state === PlayerState.ELIMINATED ||
+        p.state === PlayerState.DISCONNECTED
+      ) {
         room.players.delete(id);
         this.playerRoomMap.delete(id);
       }
@@ -262,7 +279,7 @@ export class GameEngine {
   private handleJoinRoom(event: GameEvent) {
     const room = this.rooms.get(event.roomId);
     if (!room) return;
-    // Join allowed in WAITING or COUNTDOWN (locked at 0 when SURVIVAL starts).
+    // Join allowed only in WAITING or COUNTDOWN. No re-entry same round (survival/finished = spectator or wait for reset).
     if (
       room.roundState !== RoundState.WAITING_FOR_PLAYERS &&
       room.roundState !== RoundState.COUNTDOWN
@@ -358,7 +375,8 @@ export class GameEngine {
 
     if (player.state === PlayerState.ACTIVE) {
       this.eliminatePlayer(room, event.playerId);
-      player.state = PlayerState.LEFT;
+      player.voluntaryExit = true;
+      // Keep ELIMINATED so they stay in rankings; re-join same round is blocked in handleJoinRoom.
     } else if (player.state === PlayerState.JOINED) {
       player.state = PlayerState.LEFT;
     }
@@ -499,6 +517,7 @@ export class GameEngine {
         }
 
         this.tickBots(room, now);
+        this.tickTutorialScript(room, now);
         this.checkWinCondition(room);
 
         if (room.roundState === RoundState.SURVIVAL_PHASE) {
@@ -547,6 +566,8 @@ export class GameEngine {
 
       case RoundState.SURVIVAL_PHASE: {
         room.survivalStartedAt = Date.now();
+        if (room.id === TUTORIAL_ROOM_ID)
+          this.tutorialEliminationStep.set(room.id, 0);
         for (const player of room.players.values()) {
           if (player.state === PlayerState.JOINED) {
             player.state = PlayerState.ACTIVE;
@@ -579,13 +600,17 @@ export class GameEngine {
       case RoundState.ROUND_COMPLETE: {
         this.distributePayout(room);
         this.creditShards(room);
-        // Room persists. Schedule transition to WAITING (next round). Short delay = fast loop.
-        const delayMs = this.config.roundCompleteDelayMs;
-        const t = window.setTimeout(() => {
-          this.roundCompleteResetTimeouts.delete(room.id);
-          this.resetRound(room.id);
-        }, delayMs) as unknown as number;
-        this.roundCompleteResetTimeouts.set(room.id, t);
+        if (room.id === TUTORIAL_ROOM_ID) {
+          this.tutorialEliminationStep.delete(room.id);
+          this.emit("tutorial_complete", { roomId: room.id });
+        } else {
+          const delayMs = this.config.roundCompleteDelayMs;
+          const t = window.setTimeout(() => {
+            this.roundCompleteResetTimeouts.delete(room.id);
+            this.resetRound(room.id);
+          }, delayMs) as unknown as number;
+          this.roundCompleteResetTimeouts.set(room.id, t);
+        }
         break;
       }
     }
@@ -643,9 +668,14 @@ export class GameEngine {
   }
 
   private assignRankings(room: EngineRoom) {
-    const active = [...room.players.values()]
+    let active = [...room.players.values()]
       .filter((p) => p.state === PlayerState.ACTIVE)
       .sort((a, b) => b.timeSurvived - a.timeSurvived);
+
+    // Tutorial: force user to 2nd place (bot 1st, user 2nd)
+    if (room.id === TUTORIAL_ROOM_ID && active.length >= 2) {
+      active = [...active].sort((a) => (a.id === this.localPlayerId ? 1 : -1));
+    }
 
     const eliminated = [...room.players.values()]
       .filter(
@@ -731,10 +761,11 @@ export class GameEngine {
     const tier = TIERS[room.tier];
     if (!tier) return;
 
-    const botCount = Math.min(
-      this.config.botCount,
-      tier.maxPlayers - room.players.size,
-    );
+    const wantBots =
+      room.id === TUTORIAL_ROOM_ID
+        ? tier.maxPlayers - room.players.size
+        : this.config.botCount;
+    const botCount = Math.min(wantBots, tier.maxPlayers - room.players.size);
 
     let botIdCounter = 0;
     for (let i = 0; i < botCount; i++) {
@@ -756,7 +787,25 @@ export class GameEngine {
     }
   }
 
+  /** Tutorial: eliminate bots at scripted times so user ends with 2nd place. */
+  private tickTutorialScript(room: EngineRoom, now: number) {
+    if (room.id !== TUTORIAL_ROOM_ID || !room.survivalStartedAt) return;
+    const elapsed = now - room.survivalStartedAt;
+    const step = this.tutorialEliminationStep.get(room.id) ?? 0;
+    if (step >= TUTORIAL_ELIMINATION_SCHEDULE_MS.length) return;
+    if (elapsed < TUTORIAL_ELIMINATION_SCHEDULE_MS[step]) return;
+
+    const bots = [...room.players.values()]
+      .filter((p) => p.isBot && p.state === PlayerState.ACTIVE)
+      .sort((a, b) => a.id - b.id);
+    if (bots.length > 0) {
+      this.eliminatePlayer(room, bots[0].id);
+      this.tutorialEliminationStep.set(room.id, step + 1);
+    }
+  }
+
   private tickBots(room: EngineRoom, now: number) {
+    if (room.id === TUTORIAL_ROOM_ID) return; // Tutorial: only scripted eliminations
     const tier = TIERS[room.tier];
     const pulseWindowMs =
       this.debugOverrides.pulseWindowMs ?? (tier?.pulseWindowSec ?? 5) * 1000;
@@ -803,6 +852,26 @@ export class GameEngine {
   /* ── seeding ───────────────────────────────────────────── */
 
   private seedRooms() {
+    // Tutorial demo room: 0 entry, 5 players, scripted outcome
+    const tutorialRoom: EngineRoom = {
+      id: TUTORIAL_ROOM_ID,
+      type: "alpha",
+      tier: 0,
+      roundState: RoundState.WAITING_FOR_PLAYERS,
+      players: new Map(),
+      pool: 0,
+      timerMs: 0,
+      marginRatio: 0,
+      volatilityMul: 1,
+      winnerId: null,
+      top3: [],
+      roundPaid: false,
+      countdownMs: 0,
+      survivalStartedAt: null,
+      createdAt: Date.now(),
+    };
+    this.rooms.set(TUTORIAL_ROOM_ID, tutorialRoom);
+
     const types: Array<"alpha" | "blitz"> = ["alpha", "blitz"];
     for (const type of types) {
       for (let tier = 1; tier <= 3; tier++) {
