@@ -257,10 +257,18 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "TICK", payload: data as TickPayload });
       }),
       engine.on("elimination", (data) => {
-        dispatch({
-          type: "ELIMINATION",
-          payload: data as EliminationPayload,
-        });
+        const payload = data as EliminationPayload;
+        dispatch({ type: "ELIMINATION", payload });
+        // Sync engine room and player state so UI has voluntaryExit and ELIMINATED (spectator).
+        if (payload.player_id === (userId ?? 1)) {
+          const rid = engineRef.current?.getLocalRoomId();
+          if (rid) {
+            const room = engine.getRoom(rid);
+            if (room) dispatch({ type: "ENGINE_ROOM", room });
+            const lp = engine.getPlayerInRoom(rid, userId ?? 1);
+            if (lp) dispatch({ type: "PLAYER_STATE", playerState: lp.state });
+          }
+        }
       }),
       engine.on("pulse_ack", (data) => {
         dispatch({ type: "PULSE_ACK", payload: data as PulseAckPayload });
@@ -336,13 +344,16 @@ export function EngineProvider({ children }: { children: ReactNode }) {
   const forfeit = useCallback(() => {
     const rid = engineRef.current?.getLocalRoomId();
     if (!rid) return;
+    const inSurvival =
+      engineRef.current?.getLocalRoundState() === RoundState.SURVIVAL_PHASE;
     engineRef.current?.dispatch({
       type: "LEAVE_ROOM",
       playerId: userId ?? 1,
       roomId: rid,
       timestamp: Date.now(),
     });
-    dispatch({ type: "FORFEIT" });
+    // Exit during survival → eliminated, spectator (stay on game view). No same-round re-entry.
+    if (!inSurvival) dispatch({ type: "FORFEIT" });
   }, [userId]);
 
   const clearRoom = useCallback(() => {
@@ -386,6 +397,10 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     });
   }, [userId]);
 
+  const localId = userId ?? 1;
+  const voluntaryExit =
+    state.engineRoom?.players.get(localId)?.voluntaryExit ?? false;
+
   const value: GameContextType = {
     state,
     listRooms,
@@ -403,6 +418,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       engineRoom: state.engineRoom,
       roundState: state.roundState,
       playerState: state.playerState,
+      voluntaryExit,
       payoutInfo: state.payoutInfo,
       shardCredit: state.shardCredit,
       simulateDisconnect,
