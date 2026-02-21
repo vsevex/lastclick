@@ -87,4 +87,6 @@ type PlayerState struct {
 	JoinedAt     time.Time
 	LastPulseAt  time.Time
 	EliminatedAt *time.Time
+	// Disconnected: app/connection closed temporarily. Still in room; pulse window still applies. Reconnect = restore or eliminate.
+	Disconnected bool
 }
